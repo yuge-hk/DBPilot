@@ -1,0 +1,184 @@
+package api
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"github.com/dbpilot/dbpilot/internal/provider"
+	"github.com/dbpilot/dbpilot/internal/provider/postgres"
+)
+
+type accountRequest struct {
+	Name       string  `json:"name"`
+	Password   string  `json:"password"`
+	Login      *bool   `json:"login"`
+	Superuser  *bool   `json:"superuser"`
+	CreateDB   *bool   `json:"create_db"`
+	CreateRole *bool   `json:"create_role"`
+	ConnLimit  *int    `json:"conn_limit"`
+	ValidUntil *string `json:"valid_until"`
+}
+
+func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeError(w, ErrBadRequest("invalid_id", "invalid id"))
+		return
+	}
+	params, apiErr := s.connParams(r, id)
+	if apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	accounts, err := s.pg.ListAccounts(r.Context(), params)
+	if err != nil {
+		writeError(w, ErrInternal(err))
+		return
+	}
+	if accounts == nil {
+		accounts = []provider.Account{}
+	}
+	writeOK(w, accounts)
+}
+
+func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeError(w, ErrBadRequest("invalid_id", "invalid id"))
+		return
+	}
+	var req accountRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, ErrBadRequest("invalid_request", "invalid request body"))
+		return
+	}
+	if apiErr := validateIdentifier(req.Name, "account"); apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	if postgres.IsProtectedAccount(req.Name) {
+		writeError(w, NewError(http.StatusForbidden, "protected_account", "this account is protected"))
+		return
+	}
+	if req.Password == "" {
+		writeError(w, ErrBadRequest("invalid_password", "password is required"))
+		return
+	}
+	params, apiErr := s.connParams(r, id)
+	if apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	login := true
+	if req.Login != nil {
+		login = *req.Login
+	}
+	connLimit := -1
+	if req.ConnLimit != nil {
+		connLimit = *req.ConnLimit
+	}
+	validUntil := ""
+	if req.ValidUntil != nil {
+		validUntil = *req.ValidUntil
+	}
+	creq := provider.CreateAccountRequest{
+		Name:       req.Name,
+		Password:   req.Password,
+		Login:      login,
+		Superuser:  boolVal(req.Superuser),
+		CreateDB:   boolVal(req.CreateDB),
+		CreateRole: boolVal(req.CreateRole),
+		ConnLimit:  connLimit,
+		ValidUntil: validUntil,
+	}
+	if err := s.pg.CreateAccount(r.Context(), params, creq); err != nil {
+		s.auditRecord(r, "create_account", "account", req.Name, "failure", "")
+		writeError(w, accountError(err))
+		return
+	}
+	s.auditRecord(r, "create_account", "account", req.Name, "success", "")
+	writeJSON(w, http.StatusCreated, map[string]string{"name": req.Name})
+}
+
+func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeError(w, ErrBadRequest("invalid_id", "invalid id"))
+		return
+	}
+	name := pathParam(r, "name")
+	if apiErr := validateIdentifier(name, "account"); apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	var req accountRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, ErrBadRequest("invalid_request", "invalid request body"))
+		return
+	}
+	params, apiErr := s.connParams(r, id)
+	if apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	ureq := provider.UpdateAccountRequest{Name: name}
+	if req.Password != "" {
+		ureq.NewPassword = &req.Password
+	}
+	ureq.Login = req.Login
+	ureq.Superuser = req.Superuser
+	ureq.CreateDB = req.CreateDB
+	ureq.CreateRole = req.CreateRole
+	ureq.ConnLimit = req.ConnLimit
+	ureq.ValidUntil = req.ValidUntil
+	if err := s.pg.UpdateAccount(r.Context(), params, ureq); err != nil {
+		s.auditRecord(r, "update_account", "account", name, "failure", "")
+		writeError(w, accountError(err))
+		return
+	}
+	s.auditRecord(r, "update_account", "account", name, "success", "")
+	writeOK(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeError(w, ErrBadRequest("invalid_id", "invalid id"))
+		return
+	}
+	name := pathParam(r, "name")
+	if apiErr := validateIdentifier(name, "account"); apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	params, apiErr := s.connParams(r, id)
+	if apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	if err := s.pg.DeleteAccount(r.Context(), params, name); err != nil {
+		s.auditRecord(r, "delete_account", "account", name, "failure", "")
+		writeError(w, accountError(err))
+		return
+	}
+	s.auditRecord(r, "delete_account", "account", name, "success", "")
+	writeOK(w, map[string]string{"status": "ok"})
+}
+
+func boolVal(b *bool) bool {
+	return b != nil && *b
+}
+
+func accountError(err error) *APIError {
+	switch {
+	case errors.Is(err, provider.ErrAccountProtected):
+		return NewError(http.StatusForbidden, "protected_account", "this account is protected")
+	case errors.Is(err, provider.ErrAccountNotFound):
+		return ErrNotFound("account_not_found", "account not found")
+	case errors.Is(err, provider.ErrAccountHasDeps):
+		return NewError(http.StatusConflict, "account_has_dependencies", err.Error())
+	default:
+		return NewError(http.StatusConflict, "account_operation_failed", err.Error())
+	}
+}

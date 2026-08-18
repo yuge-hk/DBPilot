@@ -1,0 +1,36 @@
+# Go
+/bin/
+*.exe
+*.test
+*.out
+
+# Frontend
+web/node_modules/
+web/dist/*
+!web/dist/index.html
+
+# Build artifacts (root-level only; do NOT ignore cmd/dbpilot source dir)
+/dbpilot
+/dbpilot_linux_*
+/dist/
+*.tar.gz
+
+# SQLite runtime files
+*.db
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+
+# Env
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
