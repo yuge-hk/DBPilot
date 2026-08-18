@@ -16,6 +16,8 @@ import {
   NDescriptions,
   NDescriptionsItem,
   NSpace,
+  NGrid,
+  NGi,
   useMessage,
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
@@ -25,6 +27,8 @@ import {
   type InstancePayload,
   type TestResult,
   type ToolInfo,
+  type FirewallState,
+  type HbaRule,
 } from '@/api/instances'
 import { ApiRequestError } from '@/api/client'
 
@@ -186,6 +190,71 @@ async function testById(inst: Instance) {
   }
 }
 
+// ---- firewall ----
+const showFirewall = ref(false)
+const firewall = ref<FirewallState | null>(null)
+const firewallLoading = ref(false)
+const firewallInstance = ref<Instance | null>(null)
+const ruleForm = reactive({
+  database: 'all',
+  user: 'all',
+  address: '',
+  method: 'scram-sha-256',
+})
+const ruleSaving = ref(false)
+
+async function openFirewall(inst: Instance) {
+  firewallInstance.value = inst
+  showFirewall.value = true
+  ruleForm.address = ''
+  ruleForm.database = 'all'
+  ruleForm.user = 'all'
+  ruleForm.method = 'scram-sha-256'
+  await loadFirewall()
+}
+
+async function loadFirewall() {
+  if (!firewallInstance.value) return
+  firewallLoading.value = true
+  try {
+    firewall.value = await instancesApi.firewall(firewallInstance.value.id)
+  } catch (e) {
+    handleError(e)
+  } finally {
+    firewallLoading.value = false
+  }
+}
+
+async function addRule() {
+  if (!firewallInstance.value || !ruleForm.address) return
+  ruleSaving.value = true
+  try {
+    await instancesApi.addFirewallRule(firewallInstance.value.id, { ...ruleForm })
+    message.success(t('common.success'))
+    ruleForm.address = ''
+    await loadFirewall()
+  } catch (e) {
+    handleError(e)
+  } finally {
+    ruleSaving.value = false
+  }
+}
+
+async function removeRule(rule: HbaRule) {
+  if (!firewallInstance.value) return
+  try {
+    await instancesApi.removeFirewallRule(firewallInstance.value.id, {
+      database: rule.database,
+      user: rule.user,
+      address: rule.address,
+    })
+    message.success(t('common.success'))
+    await loadFirewall()
+  } catch (e) {
+    handleError(e)
+  }
+}
+
 const columns: DataTableColumns<Instance> = [
   { title: t('instances.name'), key: 'name' },
   {
@@ -207,6 +276,7 @@ const columns: DataTableColumns<Instance> = [
       h(NSpace, { size: 4 }, () => [
         h(NButton, { size: 'small', onClick: () => testById(row) }, () => t('instances.testConnection')),
         h(NButton, { size: 'small', onClick: () => openTools(row) }, () => t('instances.tools')),
+        h(NButton, { size: 'small', onClick: () => openFirewall(row) }, () => t('instances.firewall')),
         h(NButton, { size: 'small', onClick: () => openEdit(row) }, () => t('common.edit')),
         h(
           NPopconfirm,
@@ -329,6 +399,88 @@ function testResultType(): 'success' | 'error' {
         {{ t('instances.toolsHint') }}
       </n-alert>
     </n-modal>
+
+    <n-modal v-model:show="showFirewall" preset="card" :title="t('instances.firewall')" style="width: 960px; max-width: 96vw">
+      <n-alert type="warning" style="margin-bottom: 12px" :title="t('instances.firewallHint')" />
+
+      <n-descriptions v-if="firewall" bordered :column="2" size="small" style="margin-bottom: 12px">
+        <n-descriptions-item :label="t('instances.listenAddresses')">
+          {{ firewall.listen_addresses || '-' }}
+        </n-descriptions-item>
+        <n-descriptions-item label="pg_hba.conf">
+          {{ firewall.hba_file || '-' }}
+        </n-descriptions-item>
+      </n-descriptions>
+
+      <n-alert v-if="firewall && !firewall.writable" type="error" style="margin-bottom: 12px">
+        {{ firewall.error || t('instances.firewallNoAccess') }}
+      </n-alert>
+
+      <template v-if="firewall && firewall.writable">
+        <n-grid :cols="4" :x-gap="12" :y-gap="8" style="margin-bottom: 12px">
+          <n-gi>
+            <div class="fw-label">{{ t('instances.ruleDatabase') }}</div>
+            <n-input v-model:value="ruleForm.database" />
+          </n-gi>
+          <n-gi>
+            <div class="fw-label">{{ t('instances.ruleUser') }}</div>
+            <n-input v-model:value="ruleForm.user" />
+          </n-gi>
+          <n-gi>
+            <div class="fw-label">{{ t('instances.ruleAddress') }}</div>
+            <n-input v-model:value="ruleForm.address" placeholder="192.168.0.0/24" />
+          </n-gi>
+          <n-gi>
+            <div class="fw-label">{{ t('instances.ruleMethod') }}</div>
+            <n-select
+              v-model:value="ruleForm.method"
+              :options="[
+                { label: 'scram-sha-256', value: 'scram-sha-256' },
+                { label: 'md5', value: 'md5' },
+                { label: 'trust', value: 'trust' },
+                { label: 'reject', value: 'reject' },
+              ]"
+            />
+          </n-gi>
+        </n-grid>
+        <n-button
+          type="primary"
+          :loading="ruleSaving"
+          :disabled="!ruleForm.address"
+          @click="addRule"
+          style="margin-bottom: 12px"
+        >
+          {{ t('instances.addRule') }}
+        </n-button>
+
+        <n-data-table
+          :columns="[
+            { title: t('instances.ruleType'), key: 'type', width: 90 },
+            { title: t('instances.ruleDatabase'), key: 'database', width: 120 },
+            { title: t('instances.ruleUser'), key: 'user', width: 120 },
+            { title: t('instances.ruleAddress'), key: 'address' },
+            { title: t('instances.ruleMethod'), key: 'method', width: 120 },
+            {
+              title: t('common.actions'),
+              key: 'actions',
+              width: 90,
+              render: (row: HbaRule) =>
+                row.type === 'host' || row.type === 'hostssl' || row.type === 'hostnossl'
+                  ? h(
+                      NButton,
+                      { size: 'tiny', type: 'error', tertiary: true, onClick: () => removeRule(row) },
+                      () => t('instances.removeRule'),
+                    )
+                  : '',
+            },
+          ]"
+          :data="firewall.rules"
+          :loading="firewallLoading"
+          size="small"
+          :bordered="false"
+        />
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -337,5 +489,10 @@ function testResultType(): 'success' | 'error' {
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
+}
+.fw-label {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-bottom: 4px;
 }
 </style>

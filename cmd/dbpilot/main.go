@@ -122,6 +122,7 @@ func runCmd(args []string) {
 	srv.SetTaskManager(taskManager)
 	srv.SetBackupEngine(engine)
 	srv.SetAuditService(auditService)
+	srv.SetRunner(runner.ExecRunner{})
 	srv.RegisterTaskHandlers()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -193,9 +194,8 @@ Group=dbpilot
 ExecStart=/usr/local/bin/dbpilot run --config /etc/dbpilot/config.yaml
 Restart=on-failure
 RestartSec=5
-NoNewPrivileges=true
 ProtectSystem=full
-ReadWritePaths=/var/lib/dbpilot /var/log/dbpilot
+ReadWritePaths=/var/lib/dbpilot /var/log/dbpilot /etc/postgresql
 
 [Install]
 WantedBy=multi-user.target
@@ -305,6 +305,27 @@ log:
 
 	run("install systemd unit", func() error {
 		return os.WriteFile("/etc/systemd/system/dbpilot.service", []byte(systemdUnit), 0o644)
+	})
+
+	run("configure sudoers for firewall management", func() error {
+		catPath, _ := exec.LookPath("cat")
+		cpPath, _ := exec.LookPath("cp")
+		systemctlPath, _ := exec.LookPath("systemctl")
+		if catPath == "" || cpPath == "" || systemctlPath == "" {
+			fmt.Println("  skipping (cat/cp/systemctl not found)")
+			return nil
+		}
+		sudoers := fmt.Sprintf(
+			"dbpilot ALL=(root) NOPASSWD: %s /etc/postgresql/*/*/pg_hba.conf, %s /tmp/dbpilot-hba-*.conf /etc/postgresql/*/*/pg_hba.conf, %s /etc/postgresql/*/*/pg_hba.conf /etc/postgresql/*/*/pg_hba.conf.dbpilot.bak, %s reload postgresql\n",
+			catPath, cpPath, cpPath, systemctlPath)
+		if err := os.WriteFile("/etc/sudoers.d/dbpilot", []byte(sudoers), 0o440); err != nil {
+			return err
+		}
+		if err := exec.Command("visudo", "-c").Run(); err != nil {
+			os.Remove("/etc/sudoers.d/dbpilot")
+			return fmt.Errorf("invalid sudoers: %w", err)
+		}
+		return nil
 	})
 
 	run("enable and start dbpilot.service", func() error {

@@ -9,9 +9,8 @@ Group=dbpilot
 ExecStart=/usr/local/bin/dbpilot run --config /etc/dbpilot/config.yaml
 Restart=on-failure
 RestartSec=5
-NoNewPrivileges=true
 ProtectSystem=full
-ReadWritePaths=/var/lib/dbpilot /var/log/dbpilot
+ReadWritePaths=/var/lib/dbpilot /var/log/dbpilot /etc/postgresql
 
 [Install]
 WantedBy=multi-user.target

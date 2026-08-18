@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, onMounted, reactive, ref } from 'vue'
+import { h, onMounted, reactive, ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton,
@@ -13,10 +13,15 @@ import {
   NTag,
   NSpace,
   NDatePicker,
+  NSelect,
+  NRadioGroup,
+  NRadio,
+  NDivider,
+  NCheckbox,
   useMessage,
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
-import { accountsApi, type Account, type AccountPayload } from '@/api/accounts'
+import { accountsApi, type Account, type AccountPayload, type DatabasePrivilege } from '@/api/accounts'
 import { useInstanceStore } from '@/stores/instance'
 import { ApiRequestError } from '@/api/client'
 import InstanceSelector from '@/components/InstanceSelector.vue'
@@ -27,6 +32,11 @@ const store = useInstanceStore()
 
 const accounts = ref<Account[]>([])
 const loading = ref(false)
+const hideSystem = ref(true)
+
+const filteredAccounts = computed(() =>
+  hideSystem.value ? accounts.value.filter((a) => !a.system_role) : accounts.value,
+)
 
 async function load() {
   if (!store.selectedId) return
@@ -46,6 +56,94 @@ function handleError(e: unknown) {
 }
 
 onMounted(() => load())
+watch(() => store.selectedId, () => load())
+
+// ---- privileges management ----
+const showPriv = ref(false)
+const privAccount = ref<Account | null>(null)
+const privileges = ref<DatabasePrivilege[]>([])
+const privForm = reactive({
+  database: '',
+  permission: 'read_write' as 'owner' | 'read_write' | 'read_only',
+})
+const granting = ref(false)
+
+const dbOptions = computed(() => privileges.value.map((d) => ({ label: d.database, value: d.database })))
+
+const levelLabel = (level: string) => {
+  switch (level) {
+    case 'owner':
+      return t('databases.permissionOwner')
+    case 'read_write':
+      return t('databases.permissionReadWrite')
+    case 'read_only':
+      return t('databases.permissionReadOnly')
+    default:
+      return t('accounts.noPrivilege')
+  }
+}
+
+const levelType = (level: string) => {
+  switch (level) {
+    case 'owner':
+      return 'success'
+    case 'read_write':
+      return 'info'
+    case 'read_only':
+      return 'warning'
+    default:
+      return 'default'
+  }
+}
+
+async function openPrivileges(row: Account) {
+  privAccount.value = row
+  privForm.database = ''
+  privForm.permission = 'read_write'
+  showPriv.value = true
+  await loadPrivileges()
+}
+
+async function loadPrivileges() {
+  if (!privAccount.value) return
+  try {
+    privileges.value = await accountsApi.listPrivileges(store.selectedId, privAccount.value.name)
+  } catch {
+    privileges.value = []
+  }
+}
+
+async function grantPriv() {
+  if (!privAccount.value || !privForm.database) {
+    message.warning(t('accounts.selectDatabase'))
+    return
+  }
+  granting.value = true
+  try {
+    await accountsApi.grantPrivileges(store.selectedId, privAccount.value.name, privForm.database, privForm.permission)
+    message.success(t('common.success'))
+    await loadPrivileges()
+  } catch (e) {
+    handleError(e)
+  } finally {
+    granting.value = false
+  }
+}
+
+async function revokePriv(database: string) {
+  if (!privAccount.value) return
+  try {
+    await accountsApi.revokePrivileges(store.selectedId, privAccount.value.name, database)
+    message.success(t('common.success'))
+    await loadPrivileges()
+  } catch (e) {
+    handleError(e)
+  }
+}
+
+function isSystemAccount(row: Account) {
+  return row.system_role || row.name === 'postgres'
+}
 
 // ---- create / edit modal ----
 const showModal = ref(false)
@@ -182,10 +280,15 @@ const columns: DataTableColumns<Account> = [
   {
     title: t('common.actions'),
     key: 'actions',
-    width: 170,
+    width: 240,
     render: (row) =>
       h(NSpace, { size: 4 }, () => [
         h(NButton, { size: 'small', onClick: () => openEdit(row) }, () => t('common.edit')),
+        h(
+          NButton,
+          { size: 'small', onClick: () => openPrivileges(row), disabled: isSystemAccount(row) },
+          () => t('accounts.privileges'),
+        ),
         row.system_role
           ? h(NButton, { size: 'small', type: 'error', tertiary: true, disabled: true }, () => t('common.delete'))
           : h(NButton, { size: 'small', type: 'error', tertiary: true, onClick: () => remove(row) }, () => t('common.delete')),
@@ -200,11 +303,12 @@ const columns: DataTableColumns<Account> = [
       <InstanceSelector />
       <n-button type="primary" @click="openCreate">{{ t('accounts.create') }}</n-button>
       <n-button quaternary @click="load">{{ t('common.refresh') }}</n-button>
+      <n-checkbox v-model:checked="hideSystem">{{ t('accounts.hideSystem') }}</n-checkbox>
     </div>
 
     <n-data-table
       :columns="columns"
-      :data="accounts"
+      :data="filteredAccounts"
       :loading="loading"
       :empty-description="t('common.empty')"
     />
@@ -255,6 +359,65 @@ const columns: DataTableColumns<Account> = [
         </n-space>
       </template>
     </n-modal>
+
+    <n-modal
+      v-model:show="showPriv"
+      preset="card"
+      :title="`${t('accounts.managePrivileges')} - ${privAccount?.name ?? ''}`"
+      style="width: 520px"
+    >
+      <n-form label-placement="left" label-width="100">
+        <n-form-item :label="t('databases.name')">
+          <n-select
+            v-model:value="privForm.database"
+            :options="dbOptions"
+            :placeholder="t('accounts.selectDatabase')"
+          />
+        </n-form-item>
+        <n-form-item :label="t('accounts.permission')">
+          <n-radio-group v-model:value="privForm.permission">
+            <n-radio value="owner">{{ t('databases.permissionOwner') }}</n-radio>
+            <n-radio value="read_write">{{ t('databases.permissionReadWrite') }}</n-radio>
+            <n-radio value="read_only">{{ t('databases.permissionReadOnly') }}</n-radio>
+          </n-radio-group>
+        </n-form-item>
+      </n-form>
+      <n-button type="primary" @click="grantPriv" :loading="granting" :disabled="!privForm.database">
+        {{ t('accounts.grant') }}
+      </n-button>
+
+      <n-divider />
+
+      <div class="priv-list-label">{{ t('accounts.privileges') }}</div>
+      <n-data-table
+        :columns="[
+          { title: t('databases.name'), key: 'database' },
+          {
+            title: t('accounts.permission'),
+            key: 'level',
+            width: 140,
+            render: (row: DatabasePrivilege) =>
+              h(NTag, { size: 'small', type: levelType(row.level) }, () => levelLabel(row.level)),
+          },
+          {
+            title: t('common.actions'),
+            key: 'actions',
+            width: 90,
+            render: (row: DatabasePrivilege) =>
+              row.level !== 'none'
+                ? h(
+                    NButton,
+                    { size: 'tiny', type: 'error', tertiary: true, onClick: () => revokePriv(row.database) },
+                    () => t('accounts.revoke'),
+                  )
+                : '',
+          },
+        ]"
+        :data="privileges"
+        size="small"
+        :bordered="false"
+      />
+    </n-modal>
   </div>
 </template>
 
@@ -269,5 +432,14 @@ const columns: DataTableColumns<Account> = [
   margin-left: 8px;
   font-size: 12px;
   opacity: 0.6;
+}
+.priv-list-label {
+  font-size: 13px;
+  margin-bottom: 8px;
+  opacity: 0.8;
+}
+.priv-row {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
 }
 </style>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, onMounted, ref, reactive, computed } from 'vue'
+import { h, onMounted, ref, reactive, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton,
@@ -61,6 +61,7 @@ function handleError(e: unknown) {
 }
 
 onMounted(() => load())
+watch(() => store.selectedId, () => load())
 
 // ---- create database (one-click) ----
 const showCreate = ref(false)

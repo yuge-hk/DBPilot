@@ -99,6 +99,14 @@ type CreateResult struct {
 	Permission string `json:"permission"`
 }
 
+// DatabasePrivilege describes an account's effective privilege level on a
+// database. Level is one of "owner", "read_write", "read_only", or "none".
+type DatabasePrivilege struct {
+	Database string `json:"database"`
+	Owner    bool   `json:"owner"`
+	Level    string `json:"level"`
+}
+
 // Provider abstracts database-specific operations. V0.1 ships a PostgreSQL
 // implementation; a future MySQL provider can implement the same interface.
 type Provider interface {
@@ -110,4 +118,7 @@ type Provider interface {
 	DeleteAccount(ctx context.Context, p ConnParams, name string) error
 	DeleteDatabase(ctx context.Context, p ConnParams, name string) error
 	CreateDatabaseWithAccount(ctx context.Context, p ConnParams, req CreateDatabaseRequest) (*CreateResult, error)
+	GrantDatabasePrivileges(ctx context.Context, p ConnParams, account, database, permission string) error
+	RevokeDatabasePrivileges(ctx context.Context, p ConnParams, account, database string) error
+	ListDatabasePrivileges(ctx context.Context, p ConnParams, account string) ([]DatabasePrivilege, error)
 }

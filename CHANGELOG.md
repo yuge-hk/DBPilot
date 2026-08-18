@@ -6,6 +6,24 @@
 
 ## [Unreleased]
 
+## [0.1.1]
+
+### Added
+
+- 账号数据库权限管理：为账号在指定数据库上授予 / 撤销权限（Owner / Read-Write / Read-Only），并展示每个库的真实权限级别
+- PostgreSQL 防火墙设置：查看 listen_addresses 与 pg_hba.conf 规则，添加 / 移除来源地址规则并自动 reload
+- 账号列表「隐藏系统账号」开关
+
+### Fixed
+
+- 首次注册用户名校验过严（≥3 字符且仅 ASCII），现支持 Unicode、1–64 字符
+- 首次注册双重提交导致 `UNIQUE constraint` 报 500（改为优雅返回 `already_initialized`）
+- 数据库 / 账号页面首次进入不自动加载（实例自动选中后不刷新）
+- 防火墙弹窗布局过窄
+- systemd unit 移除 `NoNewPrivileges` 并放行 `/etc/postgresql`，使防火墙管理可用
+
+## [0.1.0]
+
 ### Added
 
 - DBPilot V0.1 初始版本

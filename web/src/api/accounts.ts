@@ -23,6 +23,12 @@ export interface AccountPayload {
   valid_until?: string
 }
 
+export interface DatabasePrivilege {
+  database: string
+  owner: boolean
+  level: 'owner' | 'read_write' | 'read_only' | 'none'
+}
+
 export const accountsApi = {
   list(instanceId: number) {
     return api.get<Account[]>(`/instances/${instanceId}/accounts`)
@@ -35,5 +41,17 @@ export const accountsApi = {
   },
   remove(instanceId: number, name: string) {
     return api.delete(`/instances/${instanceId}/accounts/${encodeURIComponent(name)}`)
+  },
+  grantPrivileges(instanceId: number, name: string, database: string, permission: string) {
+    return api.post(`/instances/${instanceId}/accounts/${encodeURIComponent(name)}/privileges`, {
+      database,
+      permission,
+    })
+  },
+  listPrivileges(instanceId: number, name: string) {
+    return api.get<DatabasePrivilege[]>(`/instances/${instanceId}/accounts/${encodeURIComponent(name)}/privileges`)
+  },
+  revokePrivileges(instanceId: number, name: string, database: string) {
+    return api.delete(`/instances/${instanceId}/accounts/${encodeURIComponent(name)}/privileges/${encodeURIComponent(database)}`)
   },
 }

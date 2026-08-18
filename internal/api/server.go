@@ -20,6 +20,7 @@ import (
 	"github.com/dbpilot/dbpilot/internal/instance"
 	"github.com/dbpilot/dbpilot/internal/persistence"
 	"github.com/dbpilot/dbpilot/internal/provider/postgres"
+	"github.com/dbpilot/dbpilot/internal/runner"
 	"github.com/dbpilot/dbpilot/internal/storage"
 	"github.com/dbpilot/dbpilot/internal/task"
 )
@@ -51,6 +52,7 @@ type Server struct {
 	tasks     *task.Manager
 	engine    *backup.Engine
 	audit     *audit.Service
+	runner    runner.Runner
 }
 
 func NewServer(cfg *config.Config, db *persistence.DB, authSvc *auth.Service, static fs.FS) *Server {
@@ -93,6 +95,10 @@ func (s *Server) SetBackupEngine(e *backup.Engine) {
 
 func (s *Server) SetAuditService(a *audit.Service) {
 	s.audit = a
+}
+
+func (s *Server) SetRunner(r runner.Runner) {
+	s.runner = r
 }
 
 // auditRecord writes an audit entry for the current request (no secrets).
@@ -157,10 +163,17 @@ func (s *Server) routes(r chi.Router) {
 			r.Post("/databases", s.handleCreateDatabase)
 			r.Delete("/databases/{name}", s.handleDeleteDatabase)
 
+			r.Get("/firewall", s.handleGetFirewall)
+			r.Post("/firewall/rules", s.handleAddFirewallRule)
+			r.Delete("/firewall/rules", s.handleRemoveFirewallRule)
+
 			r.Get("/accounts", s.handleListAccounts)
 			r.Post("/accounts", s.handleCreateAccount)
 			r.Put("/accounts/{name}", s.handleUpdateAccount)
 			r.Delete("/accounts/{name}", s.handleDeleteAccount)
+			r.Post("/accounts/{name}/privileges", s.handleGrantPrivileges)
+			r.Get("/accounts/{name}/privileges", s.handleListPrivileges)
+			r.Delete("/accounts/{name}/privileges/{database}", s.handleRevokePrivileges)
 		})
 	})
 

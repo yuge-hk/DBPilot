@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/dbpilot/dbpilot/internal/auth"
 )
@@ -54,6 +56,11 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	user, err := s.auth.InitAdmin(r.Context(), req.Username, req.Password)
 	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			// concurrent double-submit raced; treat as already initialized
+			writeError(w, ErrConflict("already_initialized", "already initialized"))
+			return
+		}
 		writeError(w, ErrInternal(err))
 		return
 	}
@@ -155,11 +162,11 @@ func validateUsername(u string) error {
 	if u == "" {
 		return ErrBadRequest("invalid_username", "username is required")
 	}
-	if len(u) < 3 || len(u) > 64 {
-		return ErrBadRequest("invalid_username", "username must be 3-64 characters")
+	if utf8.RuneCountInString(u) > 64 {
+		return ErrBadRequest("invalid_username", "username is too long")
 	}
 	for _, c := range u {
-		if !(c == '_' || c == '-' || c == '.' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+		if unicode.IsSpace(c) || unicode.IsControl(c) {
 			return ErrBadRequest("invalid_username", "username contains invalid characters")
 		}
 	}

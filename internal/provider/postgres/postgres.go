@@ -109,6 +109,29 @@ func (p *Postgres) ServerVersion(ctx context.Context, params provider.ConnParams
 	return v
 }
 
+// ServerConfig returns the server's listen_addresses and config file paths.
+type ServerConfig struct {
+	ListenAddresses string
+	HbaFile         string
+	ConfigFile      string
+	DataDirectory   string
+}
+
+func (p *Postgres) ServerConfig(ctx context.Context, params provider.ConnParams) (*ServerConfig, error) {
+	conn, err := p.connect(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(ctx)
+
+	cfg := &ServerConfig{}
+	_ = conn.QueryRow(ctx, "SHOW listen_addresses").Scan(&cfg.ListenAddresses)
+	_ = conn.QueryRow(ctx, "SHOW hba_file").Scan(&cfg.HbaFile)
+	_ = conn.QueryRow(ctx, "SHOW config_file").Scan(&cfg.ConfigFile)
+	_ = conn.QueryRow(ctx, "SHOW data_directory").Scan(&cfg.DataDirectory)
+	return cfg, nil
+}
+
 var toolNames = []string{"pg_dump", "pg_restore", "pg_dumpall", "psql"}
 
 // DetectTools locates and versions the PostgreSQL client tools used by the

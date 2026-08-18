@@ -170,6 +170,104 @@ func boolVal(b *bool) bool {
 	return b != nil && *b
 }
 
+type grantPrivilegeRequest struct {
+	Database   string `json:"database"`
+	Permission string `json:"permission"`
+}
+
+func (s *Server) handleListPrivileges(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeError(w, ErrBadRequest("invalid_id", "invalid id"))
+		return
+	}
+	name := pathParam(r, "name")
+	if apiErr := validateIdentifier(name, "account"); apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	params, apiErr := s.connParams(r, id)
+	if apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	privs, err := s.pg.ListDatabasePrivileges(r.Context(), params, name)
+	if err != nil {
+		writeError(w, ErrInternal(err))
+		return
+	}
+	if privs == nil {
+		privs = []provider.DatabasePrivilege{}
+	}
+	writeOK(w, privs)
+}
+
+func (s *Server) handleGrantPrivileges(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeError(w, ErrBadRequest("invalid_id", "invalid id"))
+		return
+	}
+	name := pathParam(r, "name")
+	if apiErr := validateIdentifier(name, "account"); apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	var req grantPrivilegeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, ErrBadRequest("invalid_request", "invalid request body"))
+		return
+	}
+	if apiErr := validateIdentifier(req.Database, "database"); apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	if req.Permission != "owner" && req.Permission != "read_write" && req.Permission != "read_only" {
+		writeError(w, ErrBadRequest("invalid_request", "invalid permission"))
+		return
+	}
+	params, apiErr := s.connParams(r, id)
+	if apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	if err := s.pg.GrantDatabasePrivileges(r.Context(), params, name, req.Database, req.Permission); err != nil {
+		writeError(w, NewError(http.StatusConflict, "grant_failed", err.Error()))
+		return
+	}
+	s.auditRecord(r, "grant_privileges", "account", name, "success", "database="+req.Database+" permission="+req.Permission)
+	writeOK(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleRevokePrivileges(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		writeError(w, ErrBadRequest("invalid_id", "invalid id"))
+		return
+	}
+	name := pathParam(r, "name")
+	database := pathParam(r, "database")
+	if apiErr := validateIdentifier(name, "account"); apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	if apiErr := validateIdentifier(database, "database"); apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	params, apiErr := s.connParams(r, id)
+	if apiErr != nil {
+		writeError(w, apiErr)
+		return
+	}
+	if err := s.pg.RevokeDatabasePrivileges(r.Context(), params, name, database); err != nil {
+		writeError(w, NewError(http.StatusConflict, "revoke_failed", err.Error()))
+		return
+	}
+	s.auditRecord(r, "revoke_privileges", "account", name, "success", "database="+database)
+	writeOK(w, map[string]string{"status": "ok"})
+}
+
 func accountError(err error) *APIError {
 	switch {
 	case errors.Is(err, provider.ErrAccountProtected):

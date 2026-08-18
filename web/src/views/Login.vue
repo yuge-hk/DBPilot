@@ -20,6 +20,7 @@ const confirmPassword = ref('')
 const loading = ref(false)
 
 async function submit() {
+  if (loading.value) return
   if (isSetup.value && password.value !== confirmPassword.value) {
     message.error(t('auth.passwordMismatch'))
     return
@@ -60,7 +61,6 @@ async function submit() {
             v-model:value="username"
             :placeholder="t('auth.username')"
             autocomplete="username"
-            @keydown.enter="submit"
           />
         </n-form-item>
         <n-form-item :label="t('auth.password')">
@@ -70,7 +70,6 @@ async function submit() {
             show-password-on="click"
             :placeholder="t('auth.password')"
             autocomplete="current-password"
-            @keydown.enter="submit"
           />
         </n-form-item>
         <n-form-item v-if="isSetup" :label="t('auth.confirmPassword')">
@@ -79,7 +78,6 @@ async function submit() {
             type="password"
             show-password-on="click"
             :placeholder="t('auth.confirmPassword')"
-            @keydown.enter="submit"
           />
         </n-form-item>
         <n-button
