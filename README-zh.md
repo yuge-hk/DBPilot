@@ -24,9 +24,11 @@ DBPilot **不是** pgAdmin，不是 SQL IDE，不是 1Panel，不是 Docker 管�
 ## 功能
 
 - PostgreSQL 实例管理，支持连接测试与客户端工具检测
-- 数据库与账号（Role）管理，含系统角色保护
+- 数据库与账号（Role）管理，含系统角色保护（支持「隐藏系统账号」）
 - **一键创建** — 数据库 + 独立账号 + 权限模板一步完成，输出连接串，部分失败时安全回滚
 - 权限模板：**Owner**、**Read-Write**、**Read-Only**（通过 `ALTER DEFAULT PRIVILEGES` 同时覆盖已有对象与未来对象）
+- 数据库级账号权限：按库授予 / 撤销 Owner / Read-Write / Read-Only，并展示每个库的真实权限级别
+- **PostgreSQL 防火墙** — 查看 `listen_addresses` 与 `pg_hba.conf` 规则，添加 / 移除来源地址规则并自动 reload
 - 逻辑备份：`pg_dump`（自定义 `-Fc` 格式）+ SHA256 + `manifest.json`
 - 多备份目标，逐目标记录状态（`success` / `partial_success` / `failed`）
 - 定时备份（每天 / 每周 / 每月）与 `Keep Last N` 保留策略

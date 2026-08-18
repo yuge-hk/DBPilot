@@ -27,9 +27,11 @@ Kubernetes platform.
 ## Features
 
 - PostgreSQL instance management with connection testing and client-tool detection
-- Database and account (role) management with system-role protection
+- Database and account (role) management with system-role protection (and a hide-system-accounts toggle)
 - **One-click create** — database + dedicated account + permission template in a single step, with a connection string and safe rollback on partial failure
 - Permission templates: **Owner**, **Read-Write**, **Read-Only** (existing *and* future objects via `ALTER DEFAULT PRIVILEGES`)
+- Per-database account privileges: grant / revoke Owner / Read-Write / Read-Only, with the actual privilege level shown per database
+- **PostgreSQL firewall** — view `listen_addresses` and `pg_hba.conf` rules, add/remove source-address rules, auto reload
 - Logical backup with `pg_dump` (custom `-Fc` format) + SHA256 + `manifest.json`
 - Multi-target backup with per-target status (`success` / `partial_success` / `failed`)
 - Scheduled backups (daily / weekly / monthly) and `Keep Last N` retention
