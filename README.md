@@ -128,6 +128,11 @@ are always quoted; external tools are invoked with argv arrays, never through
 a shell. Sessions use HttpOnly + SameSite cookies with CSRF protection and
 login rate limiting. See [SECURITY.md](SECURITY.md) for more.
 
+## Acknowledgments
+
+DBPilot is developed with the assistance of
+[DeepSeek](https://www.deepseek.com) and [OpenCode](https://opencode.ai).
+
 ## Contributing
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).

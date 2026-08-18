@@ -121,6 +121,11 @@ DBPILOT_TEST_PG=1 go test ./internal/provider/postgres/ ./internal/backup/
 外部工具一律 argv 传参、绝不经过 shell。会话使用 HttpOnly + SameSite Cookie，
 带 CSRF 防护与登录限流。详见 [SECURITY.md](SECURITY.md)。
 
+## 致谢
+
+DBPilot 的开发得到了 [DeepSeek](https://www.deepseek.com) 与
+[OpenCode](https://opencode.ai) 的帮助。
+
 ## 贡献
 
 欢迎参与。详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
