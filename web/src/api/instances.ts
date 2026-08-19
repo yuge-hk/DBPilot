@@ -71,6 +71,9 @@ export const instancesApi = {
   list() {
     return api.get<Instance[]>('/instances')
   },
+  systemAddresses() {
+    return api.get<string[]>('/system/addresses')
+  },
   get(id: number) {
     return api.get<Instance>(`/instances/${id}`)
   },

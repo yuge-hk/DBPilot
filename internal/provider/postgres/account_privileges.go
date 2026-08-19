@@ -99,15 +99,16 @@ func (p *Postgres) accountLevel(ctx context.Context, params provider.ConnParams,
 	}
 	defer conn.Close(ctx)
 
-	var canWrite, canRead bool
+	var canWrite, canRead, canCreate bool
 	_ = conn.QueryRow(ctx, `
 		SELECT
 			EXISTS (SELECT 1 FROM information_schema.role_table_grants WHERE grantee = $1 AND privilege_type = 'INSERT'),
-			EXISTS (SELECT 1 FROM information_schema.role_table_grants WHERE grantee = $1 AND privilege_type = 'SELECT')`,
-		account).Scan(&canWrite, &canRead)
+			EXISTS (SELECT 1 FROM information_schema.role_table_grants WHERE grantee = $1 AND privilege_type = 'SELECT'),
+			has_schema_privilege($1, 'public', 'CREATE')`,
+		account).Scan(&canWrite, &canRead, &canCreate)
 
 	switch {
-	case canWrite:
+	case canWrite || canCreate:
 		return "read_write"
 	case canRead:
 		return "read_only"

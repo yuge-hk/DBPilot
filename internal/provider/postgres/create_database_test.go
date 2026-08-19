@@ -112,6 +112,13 @@ func TestOneClickReadOnlyAndReadWrite(t *testing.T) {
 	if _, err := rwConn.Exec(ctx, "DELETE FROM items WHERE id=$1", id); err != nil {
 		t.Errorf("rw delete failed: %v", err)
 	}
+	// read-write may create its own table (CREATE ON SCHEMA public)
+	if _, err := rwConn.Exec(ctx, "CREATE TABLE rw_own (id serial primary key, v text)"); err != nil {
+		t.Errorf("rw create table failed: %v", err)
+	}
+	if _, err := rwConn.Exec(ctx, "INSERT INTO rw_own(v) VALUES ('self')"); err != nil {
+		t.Errorf("rw insert into own table failed: %v", err)
+	}
 	rwConn.Close(ctx)
 
 	// cleanup

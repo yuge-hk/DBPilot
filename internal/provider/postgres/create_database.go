@@ -163,6 +163,11 @@ func (p *Postgres) grantPrivileges(ctx context.Context, params provider.ConnPara
 		return fmt.Errorf("unsupported permission: %s", permission)
 	}
 
+	// Read-Write may create its own objects in the public schema (migrations).
+	if permission == "read_write" {
+		stmts = append(stmts, `GRANT CREATE ON SCHEMA public TO `+QuoteIdent(account))
+	}
+
 	stmts = append(stmts,
 		`GRANT `+tablePriv+` ON ALL TABLES IN SCHEMA public TO `+QuoteIdent(account),
 		`GRANT `+seqPriv+` ON ALL SEQUENCES IN SCHEMA public TO `+QuoteIdent(account),

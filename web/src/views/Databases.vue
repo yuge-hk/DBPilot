@@ -20,8 +20,10 @@ import {
 import type { DataTableColumns } from 'naive-ui'
 import { databasesApi, type Database, type CreateDatabaseResult } from '@/api/databases'
 import { accountsApi, type Account } from '@/api/accounts'
+import { instancesApi } from '@/api/instances'
 import { useInstanceStore } from '@/stores/instance'
 import { ApiRequestError } from '@/api/client'
+import { copyText } from '@/utils/clipboard'
 import InstanceSelector from '@/components/InstanceSelector.vue'
 
 const { t } = useI18n()
@@ -76,6 +78,8 @@ const createForm = reactive({
 })
 const createResult = ref<CreateDatabaseResult | null>(null)
 const showPassword = ref(false)
+const hostOptions = ref<string[]>([])
+const selectedHost = ref('')
 
 const accountOptions = computed(() =>
   accounts.value
@@ -110,6 +114,8 @@ async function submitCreate() {
       permission: createForm.permission,
     })
     createResult.value = res
+    selectedHost.value = res.host
+    await loadHostOptions(res.host)
   } catch (e) {
     handleError(e)
   } finally {
@@ -117,26 +123,36 @@ async function submitCreate() {
   }
 }
 
+async function loadHostOptions(defaultHost: string) {
+  const hosts = new Set<string>([defaultHost])
+  try {
+    const addrs = await instancesApi.systemAddresses()
+    for (const a of addrs) hosts.add(a)
+  } catch {
+    // ignore
+  }
+  hostOptions.value = Array.from(hosts)
+}
+
 function buildUrl(): string {
   if (!createResult.value) return ''
-  const { account, host, port, database } = createResult.value
+  const { account, port, database } = createResult.value
+  const host = selectedHost.value || createResult.value.host
   const pw = createForm.password
   return `postgresql://${account}:${pw ? '********' : ''}@${host}:${port}/${database}`
 }
 
 function buildUrlRevealed(): string {
   if (!createResult.value) return ''
-  const { account, host, port, database } = createResult.value
+  const { account, port, database } = createResult.value
+  const host = selectedHost.value || createResult.value.host
   return `postgresql://${account}:${createForm.password}@${host}:${port}/${database}`
 }
 
 async function copyUrl(revealed: boolean) {
-  try {
-    await navigator.clipboard.writeText(revealed ? buildUrlRevealed() : buildUrl())
-    message.success(t('common.copied'))
-  } catch {
-    message.error(t('common.failed'))
-  }
+  const ok = await copyText(revealed ? buildUrlRevealed() : buildUrl())
+  if (ok) message.success(t('common.copied'))
+  else message.error(t('common.failed'))
 }
 
 function closeCreate() {
@@ -262,6 +278,13 @@ const columns: DataTableColumns<Database> = [
 
       <template v-else>
         <n-alert type="success" :title="t('databases.createSuccess')" style="margin-bottom: 16px" />
+        <n-form-item :label="t('instances.host')" label-placement="left" style="margin-bottom: 12px">
+          <n-select
+            v-model:value="selectedHost"
+            :options="hostOptions.map((h) => ({ label: h, value: h }))"
+            style="max-width: 320px"
+          />
+        </n-form-item>
         <n-descriptions bordered :column="2">
           <n-descriptions-item :label="t('databases.database')">
             {{ createResult.database }}
@@ -269,7 +292,7 @@ const columns: DataTableColumns<Database> = [
           <n-descriptions-item :label="t('databases.account')">
             {{ createResult.account }}
           </n-descriptions-item>
-          <n-descriptions-item label="Host">{{ createResult.host }}</n-descriptions-item>
+          <n-descriptions-item label="Host">{{ selectedHost || createResult.host }}</n-descriptions-item>
           <n-descriptions-item label="Port">{{ createResult.port }}</n-descriptions-item>
         </n-descriptions>
 
@@ -291,7 +314,7 @@ const columns: DataTableColumns<Database> = [
         </n-alert>
         <n-alert v-else type="info" style="margin-top: 12px" :title="t('databases.connectionString')">
           <div class="mono">
-            postgresql://{{ createResult.account }}:******@{{ createResult.host }}:{{ createResult.port }}/{{ createResult.database }}
+            postgresql://{{ createResult.account }}:******@{{ selectedHost || createResult.host }}:{{ createResult.port }}/{{ createResult.database }}
           </div>
         </n-alert>
       </template>

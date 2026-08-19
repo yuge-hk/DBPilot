@@ -220,6 +220,7 @@ func (s *Server) routes(r chi.Router) {
 	})
 
 	r.Get("/overview", s.handleOverview)
+	r.Get("/system/addresses", s.handleSystemAddresses)
 }
 
 func (s *Server) requestLogger(next http.Handler) http.Handler {
