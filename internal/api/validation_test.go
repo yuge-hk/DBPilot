@@ -25,3 +25,19 @@ func TestValidateIdentifier(t *testing.T) {
 		t.Error("expected over-length identifier invalid")
 	}
 }
+
+func TestValidConnectionHost(t *testing.T) {
+	valid := []string{"", "127.0.0.1", "192.168.1.10", "db.example.com", "2001:db8::1", "my_host"}
+	for _, v := range valid {
+		if !validConnectionHost(v) {
+			t.Errorf("expected connection host %q valid", v)
+		}
+	}
+
+	invalid := []string{"http://example.com", "192.168.1.0/24", "host name", "user@host", "a\nb", "..", "-bad.example.com", "bad-.example.com"}
+	for _, v := range invalid {
+		if validConnectionHost(v) {
+			t.Errorf("expected connection host %q invalid", v)
+		}
+	}
+}

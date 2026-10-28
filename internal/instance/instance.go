@@ -12,16 +12,17 @@ import (
 )
 
 type Instance struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	Username    string `json:"username"`
-	SSLMode     string `json:"ssl_mode"`
-	UnixSocket  string `json:"unix_socket"`
-	SystemdUnit string `json:"systemd_unit"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ID             int64  `json:"id"`
+	Name           string `json:"name"`
+	Host           string `json:"host"`
+	Port           int    `json:"port"`
+	Username       string `json:"username"`
+	SSLMode        string `json:"ssl_mode"`
+	UnixSocket     string `json:"unix_socket"`
+	SystemdUnit    string `json:"systemd_unit"`
+	ConnectionHost string `json:"connection_host"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 var ErrNotFound = errors.New("instance not found")
@@ -41,9 +42,9 @@ func secretRef(id int64) string {
 
 func (s *Store) Create(ctx context.Context, inst *Instance, password string) error {
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO instances(name, host, port, username, secret_ref, ssl_mode, unix_socket, systemd_unit)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-		inst.Name, inst.Host, inst.Port, inst.Username, "", inst.SSLMode, inst.UnixSocket, inst.SystemdUnit)
+		INSERT INTO instances(name, host, port, username, secret_ref, ssl_mode, unix_socket, systemd_unit, connection_host)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		inst.Name, inst.Host, inst.Port, inst.Username, "", inst.SSLMode, inst.UnixSocket, inst.SystemdUnit, inst.ConnectionHost)
 	if err != nil {
 		return err
 	}
@@ -61,7 +62,7 @@ func (s *Store) Create(ctx context.Context, inst *Instance, password string) err
 
 func (s *Store) List(ctx context.Context) ([]Instance, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, host, port, username, ssl_mode, unix_socket, systemd_unit, created_at, updated_at
+		SELECT id, name, host, port, username, ssl_mode, unix_socket, systemd_unit, connection_host, created_at, updated_at
 		FROM instances ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -70,7 +71,7 @@ func (s *Store) List(ctx context.Context) ([]Instance, error) {
 	var out []Instance
 	for rows.Next() {
 		var i Instance
-		if err := rows.Scan(&i.ID, &i.Name, &i.Host, &i.Port, &i.Username, &i.SSLMode, &i.UnixSocket, &i.SystemdUnit, &i.CreatedAt, &i.UpdatedAt); err != nil {
+		if err := rows.Scan(&i.ID, &i.Name, &i.Host, &i.Port, &i.Username, &i.SSLMode, &i.UnixSocket, &i.SystemdUnit, &i.ConnectionHost, &i.CreatedAt, &i.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, i)
@@ -81,9 +82,9 @@ func (s *Store) List(ctx context.Context) ([]Instance, error) {
 func (s *Store) Get(ctx context.Context, id int64) (*Instance, error) {
 	var i Instance
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, host, port, username, ssl_mode, unix_socket, systemd_unit, created_at, updated_at
+		SELECT id, name, host, port, username, ssl_mode, unix_socket, systemd_unit, connection_host, created_at, updated_at
 		FROM instances WHERE id = ?`, id).
-		Scan(&i.ID, &i.Name, &i.Host, &i.Port, &i.Username, &i.SSLMode, &i.UnixSocket, &i.SystemdUnit, &i.CreatedAt, &i.UpdatedAt)
+		Scan(&i.ID, &i.Name, &i.Host, &i.Port, &i.Username, &i.SSLMode, &i.UnixSocket, &i.SystemdUnit, &i.ConnectionHost, &i.CreatedAt, &i.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -98,9 +99,9 @@ func (s *Store) Update(ctx context.Context, inst *Instance, newPassword *string)
 		return err
 	}
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE instances SET name=?, host=?, port=?, username=?, ssl_mode=?, unix_socket=?, systemd_unit=?,
+		UPDATE instances SET name=?, host=?, port=?, username=?, ssl_mode=?, unix_socket=?, systemd_unit=?, connection_host=?,
 		updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?`,
-		inst.Name, inst.Host, inst.Port, inst.Username, inst.SSLMode, inst.UnixSocket, inst.SystemdUnit, inst.ID)
+		inst.Name, inst.Host, inst.Port, inst.Username, inst.SSLMode, inst.UnixSocket, inst.SystemdUnit, inst.ConnectionHost, inst.ID)
 	if err != nil {
 		return err
 	}

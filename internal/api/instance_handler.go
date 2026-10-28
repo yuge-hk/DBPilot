@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -14,14 +16,15 @@ import (
 )
 
 type instanceRequest struct {
-	Name        string `json:"name"`
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	SSLMode     string `json:"ssl_mode"`
-	UnixSocket  string `json:"unix_socket"`
-	SystemdUnit string `json:"systemd_unit"`
+	Name           string `json:"name"`
+	Host           string `json:"host"`
+	Port           int    `json:"port"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	SSLMode        string `json:"ssl_mode"`
+	UnixSocket     string `json:"unix_socket"`
+	SystemdUnit    string `json:"systemd_unit"`
+	ConnectionHost string `json:"connection_host"`
 }
 
 var validSSLModes = map[string]bool{
@@ -53,7 +56,36 @@ func (r *instanceRequest) validate() *APIError {
 	if !validSSLModes[r.SSLMode] {
 		return ErrBadRequest("invalid_ssl_mode", "invalid ssl mode")
 	}
+	r.ConnectionHost = strings.TrimSpace(r.ConnectionHost)
+	if !validConnectionHost(r.ConnectionHost) {
+		return ErrBadRequest("invalid_connection_host", "invalid connection host")
+	}
 	return nil
+}
+
+func validConnectionHost(value string) bool {
+	if value == "" {
+		return true
+	}
+	if len(value) > 255 || strings.ContainsAny(value, " \t\r\n/?#@") {
+		return false
+	}
+	if net.ParseIP(value) != nil {
+		return true
+	}
+	for _, label := range strings.Split(value, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+				r == '-' || r == '_' {
+				continue
+			}
+			return false
+		}
+	}
+	return true
 }
 
 func (r *instanceRequest) toParams() provider.ConnParams {
@@ -120,13 +152,14 @@ func (s *Server) handleCreateInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	inst := &instance.Instance{
-		Name:        req.Name,
-		Host:        req.Host,
-		Port:        req.Port,
-		Username:    req.Username,
-		SSLMode:     req.SSLMode,
-		UnixSocket:  req.UnixSocket,
-		SystemdUnit: req.SystemdUnit,
+		Name:           req.Name,
+		Host:           req.Host,
+		Port:           req.Port,
+		Username:       req.Username,
+		SSLMode:        req.SSLMode,
+		UnixSocket:     req.UnixSocket,
+		SystemdUnit:    req.SystemdUnit,
+		ConnectionHost: req.ConnectionHost,
 	}
 	if err := s.instances.Create(r.Context(), inst, req.Password); err != nil {
 		writeError(w, ErrInternal(err))
@@ -157,14 +190,15 @@ func (s *Server) handleUpdateInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	inst := &instance.Instance{
-		ID:          id,
-		Name:        req.Name,
-		Host:        req.Host,
-		Port:        req.Port,
-		Username:    req.Username,
-		SSLMode:     req.SSLMode,
-		UnixSocket:  req.UnixSocket,
-		SystemdUnit: req.SystemdUnit,
+		ID:             id,
+		Name:           req.Name,
+		Host:           req.Host,
+		Port:           req.Port,
+		Username:       req.Username,
+		SSLMode:        req.SSLMode,
+		UnixSocket:     req.UnixSocket,
+		SystemdUnit:    req.SystemdUnit,
+		ConnectionHost: req.ConnectionHost,
 	}
 
 	var newPassword *string

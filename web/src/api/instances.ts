@@ -9,6 +9,7 @@ export interface Instance {
   ssl_mode: string
   unix_socket: string
   systemd_unit: string
+  connection_host: string
   created_at: string
   updated_at: string
 }
@@ -22,6 +23,7 @@ export interface InstancePayload {
   ssl_mode: string
   unix_socket: string
   systemd_unit: string
+  connection_host: string
 }
 
 export interface TestConnectionPayload {

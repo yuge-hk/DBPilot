@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -163,6 +164,34 @@ func TestOneClickFailureCleanup(t *testing.T) {
 		if a.Name == "dbpilot_it_orphan" {
 			t.Fatal("orphan account left behind after failed create")
 		}
+	}
+
+	_ = p.DeleteDatabase(ctx, params, db)
+	_ = p.DeleteAccount(ctx, params, acc)
+}
+
+func TestCreateDatabaseExistingAccountMustLogin(t *testing.T) {
+	params := integrationParams(t)
+	ctx := context.Background()
+	p := New(nil)
+
+	const db = "dbpilot_it_nologin_db"
+	const acc = "dbpilot_it_nologin_user"
+
+	_ = p.DeleteDatabase(ctx, params, db)
+	_ = p.DeleteAccount(ctx, params, acc)
+
+	if err := p.CreateAccount(ctx, params, provider.CreateAccountRequest{
+		Name: acc, Password: "nologinpass", Login: false,
+	}); err != nil {
+		t.Fatalf("create nologin account: %v", err)
+	}
+
+	_, err := p.CreateDatabaseWithAccount(ctx, params, provider.CreateDatabaseRequest{
+		Database: db, AccountMode: "existing", Account: acc, Permission: "read_write",
+	})
+	if !errors.Is(err, provider.ErrAccountCannotLogin) {
+		t.Errorf("expected ErrAccountCannotLogin, got %v", err)
 	}
 
 	_ = p.DeleteDatabase(ctx, params, db)

@@ -173,6 +173,13 @@ ALTER TABLE backup_policies ADD COLUMN last_run_at TEXT NOT NULL DEFAULT '';
 ALTER TABLE backup_policies ADD COLUMN next_run_at TEXT NOT NULL DEFAULT '';
 `,
 	},
+	{
+		Version: 4,
+		Name:    "instance_connection_host",
+		SQL: `
+ALTER TABLE instances ADD COLUMN connection_host TEXT NOT NULL DEFAULT '';
+`,
+	},
 }
 
 type DB struct {

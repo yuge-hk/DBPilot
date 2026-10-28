@@ -83,14 +83,15 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 		validUntil = *req.ValidUntil
 	}
 	creq := provider.CreateAccountRequest{
-		Name:       req.Name,
-		Password:   req.Password,
-		Login:      login,
-		Superuser:  boolVal(req.Superuser),
-		CreateDB:   boolVal(req.CreateDB),
-		CreateRole: boolVal(req.CreateRole),
-		ConnLimit:  connLimit,
-		ValidUntil: validUntil,
+		Name:         req.Name,
+		Password:     req.Password,
+		Login:        login,
+		Superuser:    boolVal(req.Superuser),
+		CreateDB:     boolVal(req.CreateDB),
+		CreateRole:   boolVal(req.CreateRole),
+		ConnLimit:    connLimit,
+		ConnLimitSet: req.ConnLimit != nil,
+		ValidUntil:   validUntil,
 	}
 	if err := s.pg.CreateAccount(r.Context(), params, creq); err != nil {
 		s.auditRecord(r, "create_account", "account", req.Name, "failure", "")
@@ -232,7 +233,8 @@ func (s *Server) handleGrantPrivileges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.pg.GrantDatabasePrivileges(r.Context(), params, name, req.Database, req.Permission); err != nil {
-		writeError(w, NewError(http.StatusConflict, "grant_failed", err.Error()))
+		s.auditRecord(r, "grant_privileges", "account", name, "failure", "database="+req.Database+" permission="+req.Permission)
+		writeError(w, privilegeError(err, "grant_failed", "grant privileges failed"))
 		return
 	}
 	s.auditRecord(r, "grant_privileges", "account", name, "success", "database="+req.Database+" permission="+req.Permission)
@@ -261,7 +263,8 @@ func (s *Server) handleRevokePrivileges(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := s.pg.RevokeDatabasePrivileges(r.Context(), params, name, database); err != nil {
-		writeError(w, NewError(http.StatusConflict, "revoke_failed", err.Error()))
+		s.auditRecord(r, "revoke_privileges", "account", name, "failure", "database="+database)
+		writeError(w, privilegeError(err, "revoke_failed", "revoke privileges failed"))
 		return
 	}
 	s.auditRecord(r, "revoke_privileges", "account", name, "success", "database="+database)
@@ -276,7 +279,24 @@ func accountError(err error) *APIError {
 		return ErrNotFound("account_not_found", "account not found")
 	case errors.Is(err, provider.ErrAccountHasDeps):
 		return NewError(http.StatusConflict, "account_has_dependencies", err.Error())
+	case errors.Is(err, provider.ErrAccountOwnsDatabase):
+		return NewError(http.StatusConflict, "account_owns_database", "account owns the database")
+	case errors.Is(err, provider.ErrCurrentAccountChange):
+		return NewError(http.StatusConflict, "current_account_password", "change the current connection password in instance settings")
 	default:
 		return NewError(http.StatusConflict, "account_operation_failed", err.Error())
+	}
+}
+
+func privilegeError(err error, fallbackCode, fallbackMessage string) *APIError {
+	switch {
+	case errors.Is(err, provider.ErrAccountOwnsDatabase):
+		return NewError(http.StatusConflict, "account_owns_database", "account owns the database")
+	case errors.Is(err, provider.ErrAccountNotFound):
+		return ErrNotFound("account_not_found", "account not found")
+	case errors.Is(err, provider.ErrDatabaseNotFound):
+		return ErrNotFound("database_not_found", "database not found")
+	default:
+		return NewError(http.StatusConflict, fallbackCode, fallbackMessage+": "+err.Error())
 	}
 }

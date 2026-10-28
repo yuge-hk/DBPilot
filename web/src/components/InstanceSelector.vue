@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onMounted, computed } from 'vue'
 import { NSelect } from 'naive-ui'
+import { useI18n } from 'vue-i18n'
 import { useInstanceStore } from '@/stores/instance'
 
+const { t } = useI18n()
 const store = useInstanceStore()
 
 const options = computed(() =>
@@ -17,6 +19,6 @@ onMounted(() => store.load())
     v-model:value="store.selectedId"
     :options="options"
     style="width: 240px"
-    placeholder="选择实例"
+    :placeholder="t('instances.selectPlaceholder')"
   />
 </template>

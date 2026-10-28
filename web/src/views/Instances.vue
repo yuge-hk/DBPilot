@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, onMounted, reactive, ref } from 'vue'
+import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NButton,
@@ -38,13 +38,18 @@ const message = useMessage()
 const instances = ref<Instance[]>([])
 const loading = ref(false)
 
-const sslModes = [
-  { label: 'disable', value: 'disable' },
-  { label: 'prefer', value: 'prefer' },
-  { label: 'require', value: 'require' },
-  { label: 'verify-ca', value: 'verify-ca' },
-  { label: 'verify-full', value: 'verify-full' },
-]
+const sslModes = computed(() => [
+  { label: t('instances.sslDisable'), value: 'disable' },
+  { label: t('instances.sslPrefer'), value: 'prefer' },
+  { label: t('instances.sslRequire'), value: 'require' },
+  { label: t('instances.sslVerifyCA'), value: 'verify-ca' },
+  { label: t('instances.sslVerifyFull'), value: 'verify-full' },
+])
+
+function sslModeLabel(value: string) {
+  const key = sslModes.value.find((mode) => mode.value === value)?.label
+  return key || value
+}
 
 async function load() {
   loading.value = true
@@ -79,6 +84,7 @@ const form = reactive<InstancePayload>({
   ssl_mode: 'prefer',
   unix_socket: '',
   systemd_unit: '',
+  connection_host: '',
 })
 const saving = ref(false)
 
@@ -90,10 +96,40 @@ function openCreate() {
   editingId.value = null
   Object.assign(form, {
     name: '', host: '', port: 5432, username: '', password: '',
-    ssl_mode: 'prefer', unix_socket: '', systemd_unit: '',
+    ssl_mode: 'prefer', unix_socket: '', systemd_unit: '', connection_host: '',
   })
   testResult.value = null
   showModal.value = true
+}
+
+function openLocalCreate() {
+  openCreate()
+  Object.assign(form, {
+    name: t('instances.localName'),
+    host: '127.0.0.1',
+    port: 5432,
+    username: 'postgres',
+    ssl_mode: 'disable',
+    systemd_unit: 'postgresql',
+  })
+}
+
+const fillingHost = ref(false)
+
+async function fillLocalConnectionHost() {
+  fillingHost.value = true
+  try {
+    const addresses = await instancesApi.systemAddresses()
+    if (addresses.length === 0) {
+      message.warning(t('instances.noLocalIP'))
+      return
+    }
+    form.connection_host = addresses[0]
+  } catch (e) {
+    handleError(e)
+  } finally {
+    fillingHost.value = false
+  }
 }
 
 function openEdit(inst: Instance) {
@@ -102,6 +138,7 @@ function openEdit(inst: Instance) {
     name: inst.name, host: inst.host, port: inst.port, username: inst.username,
     password: '', ssl_mode: inst.ssl_mode || 'prefer',
     unix_socket: inst.unix_socket || '', systemd_unit: inst.systemd_unit || '',
+    connection_host: inst.connection_host || '',
   })
   testResult.value = null
   showModal.value = true
@@ -262,11 +299,16 @@ const columns: DataTableColumns<Instance> = [
     key: 'host',
     render: (row) => (row.unix_socket ? row.unix_socket : `${row.host}:${row.port}`),
   },
+  {
+    title: t('instances.connectionHost'),
+    key: 'connection_host',
+    render: (row) => row.connection_host || '-',
+  },
   { title: t('instances.username'), key: 'username' },
   {
     title: t('instances.sslMode'),
     key: 'ssl_mode',
-    render: (row) => h(NTag, { size: 'small' }, { default: () => row.ssl_mode }),
+    render: (row) => h(NTag, { size: 'small' }, { default: () => sslModeLabel(row.ssl_mode) }),
   },
   {
     title: t('common.actions'),
@@ -299,6 +341,7 @@ function testResultType(): 'success' | 'error' {
   <div>
     <div class="toolbar">
       <n-button type="primary" @click="openCreate">{{ t('instances.add') }}</n-button>
+      <n-button @click="openLocalCreate">{{ t('instances.addLocal') }}</n-button>
       <n-button quaternary @click="load">{{ t('common.refresh') }}</n-button>
     </div>
 
@@ -325,6 +368,18 @@ function testResultType(): 'success' | 'error' {
         </n-form-item>
         <n-form-item :label="t('instances.port')">
           <n-input-number v-model:value="form.port" :min="1" :max="65535" />
+        </n-form-item>
+        <n-form-item :label="t('instances.connectionHost')">
+          <div class="host-input">
+            <n-input
+              v-model:value="form.connection_host"
+              :placeholder="t('instances.connectionHostPlaceholder')"
+            />
+            <n-button size="small" :loading="fillingHost" @click="fillLocalConnectionHost">
+              {{ t('instances.useLocalIP') }}
+            </n-button>
+          </div>
+          <div class="hint">{{ t('instances.connectionHostHint') }}</div>
         </n-form-item>
         <n-form-item :label="t('instances.username')" required>
           <n-input v-model:value="form.username" placeholder="postgres" />
@@ -390,7 +445,7 @@ function testResultType(): 'success' | 'error' {
                 { default: () => (row.found ? t('instances.toolFound') : t('instances.toolMissing')) },
               ),
           },
-          { title: 'Version', key: 'version', render: (row: ToolInfo) => row.version || '-' },
+          { title: t('common.version'), key: 'version', render: (row: ToolInfo) => row.version || '-' },
         ]"
         :data="tools"
         :loading="toolsLoading"
@@ -494,5 +549,16 @@ function testResultType(): 'success' | 'error' {
   font-size: 12px;
   opacity: 0.7;
   margin-bottom: 4px;
+}
+.host-input {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.hint {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.7;
 }
 </style>

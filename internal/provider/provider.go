@@ -51,17 +51,19 @@ type Account struct {
 	ValidUntil string `json:"valid_until"`
 	OwnedDBs   int    `json:"owned_dbs"`
 	SystemRole bool   `json:"system_role"`
+	Protected  bool   `json:"protected"`
 }
 
 type CreateAccountRequest struct {
-	Name       string
-	Password   string
-	Login      bool
-	Superuser  bool
-	CreateDB   bool
-	CreateRole bool
-	ConnLimit  int
-	ValidUntil string
+	Name         string
+	Password     string
+	Login        bool
+	Superuser    bool
+	CreateDB     bool
+	CreateRole   bool
+	ConnLimit    int
+	ConnLimitSet bool
+	ValidUntil   string
 }
 
 type UpdateAccountRequest struct {
@@ -76,11 +78,14 @@ type UpdateAccountRequest struct {
 }
 
 var (
-	ErrAccountNotFound   = errors.New("account not found")
-	ErrDatabaseNotFound  = errors.New("database not found")
-	ErrAccountProtected  = errors.New("account is protected")
-	ErrAccountHasDeps    = errors.New("account has dependencies")
-	ErrDatabaseProtected = errors.New("database is protected")
+	ErrAccountNotFound      = errors.New("account not found")
+	ErrDatabaseNotFound     = errors.New("database not found")
+	ErrAccountProtected     = errors.New("account is protected")
+	ErrAccountHasDeps       = errors.New("account has dependencies")
+	ErrDatabaseProtected    = errors.New("database is protected")
+	ErrAccountCannotLogin   = errors.New("account cannot login")
+	ErrAccountOwnsDatabase  = errors.New("account owns the database")
+	ErrCurrentAccountChange = errors.New("cannot change the current connection account password")
 )
 
 type CreateDatabaseRequest struct {
@@ -96,6 +101,8 @@ type CreateResult struct {
 	Account    string `json:"account"`
 	Host       string `json:"host"`
 	Port       int    `json:"port"`
+	SSLMode    string `json:"ssl_mode"`
+	UnixSocket string `json:"unix_socket"`
 	Permission string `json:"permission"`
 }
 

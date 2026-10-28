@@ -10,6 +10,7 @@ export interface Account {
   valid_until: string
   owned_dbs: number
   system_role: boolean
+  protected: boolean
 }
 
 export interface AccountPayload {

@@ -15,6 +15,8 @@ export interface CreateDatabasePayload {
   account: string
   password: string
   permission: 'owner' | 'read_write' | 'read_only'
+  remote_access: boolean
+  remote_address: string
 }
 
 export interface CreateDatabaseResult {
@@ -22,7 +24,12 @@ export interface CreateDatabaseResult {
   account: string
   host: string
   port: number
+  ssl_mode: string
+  unix_socket: string
   permission: string
+  remote_access: boolean
+  remote_address: string
+  firewall_warning?: string
 }
 
 export const databasesApi = {

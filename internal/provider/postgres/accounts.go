@@ -24,6 +24,11 @@ func (p *Postgres) ListAccounts(ctx context.Context, params provider.ConnParams)
 	}
 	defer conn.Close(ctx)
 
+	var currentUser string
+	if err := conn.QueryRow(ctx, `SELECT current_user`).Scan(&currentUser); err != nil {
+		return nil, err
+	}
+
 	rows, err := conn.Query(ctx, `
 		SELECT r.rolname,
 		       r.rolcanlogin,
@@ -47,6 +52,7 @@ func (p *Postgres) ListAccounts(ctx context.Context, params provider.ConnParams)
 			return nil, err
 		}
 		a.SystemRole = IsProtectedAccount(a.Name)
+		a.Protected = a.SystemRole || a.Superuser || a.Name == currentUser
 		out = append(out, a)
 	}
 	return out, rows.Err()
@@ -102,7 +108,7 @@ func (p *Postgres) CreateAccount(ctx context.Context, params provider.ConnParams
 	} else {
 		sb.WriteString(" NOCREATEROLE")
 	}
-	if req.ConnLimit > 0 {
+	if req.ConnLimitSet || req.ConnLimit != 0 {
 		sb.WriteString(fmt.Sprintf(" CONNECTION LIMIT %d", req.ConnLimit))
 	}
 	if req.ValidUntil != "" {
@@ -116,9 +122,6 @@ func (p *Postgres) UpdateAccount(ctx context.Context, params provider.ConnParams
 	if req.Name == "" {
 		return errors.New("account name is required")
 	}
-	if req.Login != nil && !*req.Login && IsProtectedAccount(req.Name) {
-		return provider.ErrAccountProtected
-	}
 	conn, err := p.connect(ctx, params)
 	if err != nil {
 		return err
@@ -131,6 +134,25 @@ func (p *Postgres) UpdateAccount(ctx context.Context, params provider.ConnParams
 	}
 	if !exists {
 		return provider.ErrAccountNotFound
+	}
+
+	var targetSuper bool
+	if err := conn.QueryRow(ctx, `SELECT rolsuper FROM pg_catalog.pg_roles WHERE rolname = $1`, req.Name).Scan(&targetSuper); err != nil {
+		return err
+	}
+	var currentUser string
+	if err := conn.QueryRow(ctx, `SELECT current_user`).Scan(&currentUser); err != nil {
+		return err
+	}
+	protected := IsProtectedAccount(req.Name) || targetSuper || req.Name == currentUser
+	if protected && req.Login != nil && !*req.Login {
+		return provider.ErrAccountProtected
+	}
+	if targetSuper && req.Superuser != nil && !*req.Superuser {
+		return provider.ErrAccountProtected
+	}
+	if req.Name == currentUser && req.NewPassword != nil {
+		return provider.ErrCurrentAccountChange
 	}
 
 	parts := []string{"ALTER ROLE " + QuoteIdent(req.Name)}
@@ -201,6 +223,18 @@ func (p *Postgres) DeleteAccount(ctx context.Context, params provider.ConnParams
 	}
 	if !exists {
 		return provider.ErrAccountNotFound
+	}
+
+	var targetSuper bool
+	if err := conn.QueryRow(ctx, `SELECT rolsuper FROM pg_catalog.pg_roles WHERE rolname = $1`, name).Scan(&targetSuper); err != nil {
+		return err
+	}
+	var currentUser string
+	if err := conn.QueryRow(ctx, `SELECT current_user`).Scan(&currentUser); err != nil {
+		return err
+	}
+	if targetSuper || name == currentUser {
+		return provider.ErrAccountProtected
 	}
 
 	var reasons []string

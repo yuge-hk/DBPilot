@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/dbpilot/dbpilot/internal/provider"
 )
 
@@ -76,12 +78,16 @@ func (p *Postgres) CreateDatabaseWithAccount(ctx context.Context, params provide
 		}
 		createdRole = true
 	} else {
-		var n int
-		if err := conn.QueryRow(ctx, `SELECT count(*) FROM pg_roles WHERE rolname = $1`, req.Account).Scan(&n); err != nil {
+		var canLogin bool
+		err := conn.QueryRow(ctx, `SELECT rolcanlogin FROM pg_catalog.pg_roles WHERE rolname = $1`, req.Account).Scan(&canLogin)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, provider.ErrAccountNotFound
+			}
 			return nil, err
 		}
-		if n == 0 {
-			return nil, provider.ErrAccountNotFound
+		if !canLogin {
+			return nil, provider.ErrAccountCannotLogin
 		}
 	}
 
@@ -130,6 +136,8 @@ func (p *Postgres) CreateDatabaseWithAccount(ctx context.Context, params provide
 		Account:    req.Account,
 		Host:       host,
 		Port:       params.Port,
+		SSLMode:    params.SSLMode,
+		UnixSocket: params.UnixSocket,
 		Permission: req.Permission,
 	}, nil
 }
@@ -171,9 +179,22 @@ func (p *Postgres) grantPrivileges(ctx context.Context, params provider.ConnPara
 	stmts = append(stmts,
 		`GRANT `+tablePriv+` ON ALL TABLES IN SCHEMA public TO `+QuoteIdent(account),
 		`GRANT `+seqPriv+` ON ALL SEQUENCES IN SCHEMA public TO `+QuoteIdent(account),
-		`ALTER DEFAULT PRIVILEGES FOR ROLE `+QuoteIdent(params.Username)+` IN SCHEMA public GRANT `+futureTablePriv+` ON TABLES TO `+QuoteIdent(account),
-		`ALTER DEFAULT PRIVILEGES FOR ROLE `+QuoteIdent(params.Username)+` IN SCHEMA public GRANT `+futureSeqPriv+` ON SEQUENCES TO `+QuoteIdent(account),
 	)
+
+	// Default privileges are keyed by the role that creates the object. Applying
+	// them only to the DBPilot connection user misses tables created later by
+	// another app/read-write role, so cover every role that can create objects
+	// here (and every superuser, which can create regardless of schema ACLs).
+	writers, err := p.defaultPrivilegeWriters(ctx, conn, params.Username)
+	if err != nil {
+		return err
+	}
+	for _, writer := range writers {
+		stmts = append(stmts,
+			`ALTER DEFAULT PRIVILEGES FOR ROLE `+QuoteIdent(writer)+` IN SCHEMA public GRANT `+futureTablePriv+` ON TABLES TO `+QuoteIdent(account),
+			`ALTER DEFAULT PRIVILEGES FOR ROLE `+QuoteIdent(writer)+` IN SCHEMA public GRANT `+futureSeqPriv+` ON SEQUENCES TO `+QuoteIdent(account),
+		)
+	}
 
 	for _, s := range stmts {
 		if _, err := conn.Exec(ctx, s); err != nil {
@@ -181,4 +202,41 @@ func (p *Postgres) grantPrivileges(ctx context.Context, params provider.ConnPara
 		}
 	}
 	return nil
+}
+
+// defaultPrivilegeWriters returns roles whose future objects should be covered
+// by ALTER DEFAULT PRIVILEGES. It only returns roles the current connection
+// user can manage (superusers can manage all roles).
+func (p *Postgres) defaultPrivilegeWriters(ctx context.Context, conn *pgx.Conn, admin string) ([]string, error) {
+	rows, err := conn.Query(ctx, `
+		SELECT r.rolname
+		FROM pg_catalog.pg_roles r
+		WHERE pg_has_role(current_user, r.oid, 'MEMBER')
+		  AND (
+			r.rolname = $1
+			OR r.rolsuper
+			OR r.oid = (SELECT datdba FROM pg_catalog.pg_database WHERE datname = current_database())
+			OR EXISTS (
+				SELECT 1
+				FROM pg_catalog.pg_namespace n, aclexplode(n.nspacl) a
+				WHERE n.nspname = 'public'
+				  AND a.grantee = r.oid
+				  AND a.privilege_type = 'CREATE'
+			)
+		  )
+		ORDER BY r.rolname`, admin)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
 }

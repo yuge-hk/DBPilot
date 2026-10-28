@@ -103,3 +103,68 @@ func TestDeleteDatabaseProtection(t *testing.T) {
 		t.Errorf("deleting postgres database should be protected, got %v", err)
 	}
 }
+
+func TestCreateAccountConnLimitZero(t *testing.T) {
+	params := integrationParams(t)
+	ctx := context.Background()
+	p := New(nil)
+
+	const name = "dbpilot_it_connlimit_zero"
+	_ = p.DeleteAccount(ctx, params, name)
+
+	if err := p.CreateAccount(ctx, params, provider.CreateAccountRequest{
+		Name: name, Password: "connlimitpass", Login: true, ConnLimit: 0, ConnLimitSet: true,
+	}); err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	defer p.DeleteAccount(ctx, params, name)
+
+	accounts, err := p.ListAccounts(ctx, params)
+	if err != nil {
+		t.Fatalf("list accounts: %v", err)
+	}
+	for _, a := range accounts {
+		if a.Name == name {
+			if a.ConnLimit != 0 {
+				t.Errorf("expected conn_limit 0, got %d", a.ConnLimit)
+			}
+			return
+		}
+	}
+	t.Fatal("created account not found")
+}
+
+func TestProtectedSuperuserAccount(t *testing.T) {
+	params := integrationParams(t)
+	ctx := context.Background()
+	p := New(nil)
+
+	const name = "dbpilot_it_superuser"
+	cleanup := func() {
+		conn, err := p.connect(ctx, params)
+		if err == nil {
+			_, _ = conn.Exec(ctx, `DROP ROLE IF EXISTS `+QuoteIdent(name))
+			conn.Close(ctx)
+		}
+	}
+	cleanup()
+	defer cleanup()
+
+	if err := p.CreateAccount(ctx, params, provider.CreateAccountRequest{
+		Name: name, Password: "superuserpass", Login: true, Superuser: true,
+	}); err != nil {
+		t.Fatalf("create superuser: %v", err)
+	}
+
+	loginFalse := false
+	superFalse := false
+	if err := p.UpdateAccount(ctx, params, provider.UpdateAccountRequest{Name: name, Login: &loginFalse}); !errors.Is(err, provider.ErrAccountProtected) {
+		t.Errorf("disabling a superuser login should be protected, got %v", err)
+	}
+	if err := p.UpdateAccount(ctx, params, provider.UpdateAccountRequest{Name: name, Superuser: &superFalse}); !errors.Is(err, provider.ErrAccountProtected) {
+		t.Errorf("demoting a superuser should be protected, got %v", err)
+	}
+	if err := p.DeleteAccount(ctx, params, name); !errors.Is(err, provider.ErrAccountProtected) {
+		t.Errorf("deleting a superuser should be protected, got %v", err)
+	}
+}

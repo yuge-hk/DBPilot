@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { h, onMounted, reactive, ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import {
   NButton,
   NDataTable,
@@ -18,6 +19,8 @@ import {
   NRadio,
   NDivider,
   NCheckbox,
+  NPopconfirm,
+  NEmpty,
   useMessage,
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
@@ -25,8 +28,10 @@ import { accountsApi, type Account, type AccountPayload, type DatabasePrivilege 
 import { useInstanceStore } from '@/stores/instance'
 import { ApiRequestError } from '@/api/client'
 import InstanceSelector from '@/components/InstanceSelector.vue'
+import { copyText } from '@/utils/clipboard'
 
 const { t } = useI18n()
+const router = useRouter()
 const message = useMessage()
 const store = useInstanceStore()
 
@@ -51,8 +56,19 @@ async function load() {
 }
 
 function handleError(e: unknown) {
-  if (e instanceof ApiRequestError) message.error(t(`errors.${e.code}`))
-  else message.error(t('common.failed'))
+  if (e instanceof ApiRequestError) {
+    const detailCodes = [
+      'account_operation_failed',
+      'account_has_dependencies',
+      'grant_failed',
+      'revoke_failed',
+      'delete_failed',
+    ]
+    const detail = detailCodes.includes(e.code) && e.message ? `: ${e.message}` : ''
+    message.error(t(`errors.${e.code}`) + detail)
+  } else {
+    message.error(t('common.failed'))
+  }
 }
 
 onMounted(() => load())
@@ -141,8 +157,21 @@ async function revokePriv(database: string) {
   }
 }
 
-function isSystemAccount(row: Account) {
-  return row.system_role || row.name === 'postgres'
+function isProtectedAccount(row: Account) {
+  return row.protected
+}
+
+function randomPassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*'
+  const values = new Uint32Array(18)
+  crypto.getRandomValues(values)
+  let password = ''
+  for (const value of values) password += chars[value % chars.length]
+  return password
+}
+
+function generatePassword() {
+  form.password = randomPassword()
 }
 
 // ---- create / edit modal ----
@@ -160,12 +189,51 @@ const form = reactive({
 })
 const saving = ref(false)
 
+const showReset = ref(false)
+const resetAccount = ref<Account | null>(null)
+const resetPassword = ref('')
+const resetSaving = ref(false)
+
+function openReset(row: Account) {
+  resetAccount.value = row
+  resetPassword.value = randomPassword()
+  showReset.value = true
+}
+
+async function doReset() {
+  if (!store.selectedId || !resetAccount.value) return
+  resetSaving.value = true
+  try {
+    await accountsApi.update(store.selectedId, resetAccount.value.name, {
+      password: resetPassword.value,
+    })
+    message.success(t('accounts.resetPasswordSuccess'))
+    showReset.value = false
+    await load()
+  } catch (e) {
+    handleError(e)
+  } finally {
+    resetSaving.value = false
+  }
+}
+
+async function copyResetPassword() {
+  const ok = await copyText(resetPassword.value)
+  if (ok) message.success(t('common.copied'))
+  else message.error(t('common.failed'))
+}
+
 function openCreate() {
+  if (!store.selectedId) {
+    message.warning(t('databases.selectInstance'))
+    return
+  }
   editing.value = null
   Object.assign(form, {
     name: '', password: '', login: true, superuser: false,
     create_db: false, create_role: false, conn_limit: -1, valid_until: null,
   })
+  generatePassword()
   showModal.value = true
 }
 
@@ -246,7 +314,13 @@ const columns: DataTableColumns<Account> = [
     render: (row) =>
       h(NSpace, { size: 6, align: 'center' }, () => [
         row.name,
-        row.system_role ? h(NTag, { size: 'small', type: 'warning' }, () => t('accounts.systemRole')) : null,
+        row.protected
+          ? h(
+              NTag,
+              { size: 'small', type: 'warning' },
+              () => (row.system_role ? t('accounts.systemRole') : t('accounts.protectedRole')),
+            )
+          : null,
       ]),
   },
   {
@@ -280,18 +354,30 @@ const columns: DataTableColumns<Account> = [
   {
     title: t('common.actions'),
     key: 'actions',
-    width: 240,
+    width: 320,
     render: (row) =>
       h(NSpace, { size: 4 }, () => [
         h(NButton, { size: 'small', onClick: () => openEdit(row) }, () => t('common.edit')),
         h(
           NButton,
-          { size: 'small', onClick: () => openPrivileges(row), disabled: isSystemAccount(row) },
+          { size: 'small', onClick: () => openPrivileges(row), disabled: isProtectedAccount(row) },
           () => t('accounts.privileges'),
         ),
-        row.system_role
+        h(
+          NButton,
+          { size: 'small', onClick: () => openReset(row), disabled: isProtectedAccount(row) },
+          () => t('accounts.resetPassword'),
+        ),
+        row.protected
           ? h(NButton, { size: 'small', type: 'error', tertiary: true, disabled: true }, () => t('common.delete'))
-          : h(NButton, { size: 'small', type: 'error', tertiary: true, onClick: () => remove(row) }, () => t('common.delete')),
+          : h(
+              NPopconfirm,
+              { onPositiveClick: () => remove(row) },
+              {
+                trigger: () => h(NButton, { size: 'small', type: 'error', tertiary: true }, () => t('common.delete')),
+                default: () => t('accounts.deleteConfirm', { name: row.name }),
+              },
+            ),
       ]),
   },
 ]
@@ -301,12 +387,20 @@ const columns: DataTableColumns<Account> = [
   <div>
     <div class="toolbar">
       <InstanceSelector />
-      <n-button type="primary" @click="openCreate">{{ t('accounts.create') }}</n-button>
+      <n-button type="primary" :disabled="!store.selectedId" @click="openCreate">{{ t('accounts.create') }}</n-button>
       <n-button quaternary @click="load">{{ t('common.refresh') }}</n-button>
       <n-checkbox v-model:checked="hideSystem">{{ t('accounts.hideSystem') }}</n-checkbox>
     </div>
 
+    <n-empty v-if="!store.selectedId" :description="t('accounts.noInstanceHint')">
+      <template #extra>
+        <n-button type="primary" @click="router.push('/instances')">
+          {{ t('overview.addInstance') }}
+        </n-button>
+      </template>
+    </n-empty>
     <n-data-table
+      v-else
       :columns="columns"
       :data="filteredAccounts"
       :loading="loading"
@@ -329,7 +423,13 @@ const columns: DataTableColumns<Account> = [
             type="password"
             show-password-on="click"
             :placeholder="editing ? t('instances.passwordPlaceholder') : t('accounts.password')"
-          />
+          >
+            <template #suffix>
+              <n-button text type="primary" size="tiny" @click="generatePassword">
+                {{ t('databases.generatePassword') }}
+              </n-button>
+            </template>
+          </n-input>
         </n-form-item>
         <n-form-item :label="t('accounts.canLogin')">
           <n-switch v-model:value="form.login" />
@@ -337,6 +437,9 @@ const columns: DataTableColumns<Account> = [
         <n-form-item :label="t('accounts.superuser')">
           <n-switch v-model:value="form.superuser" />
         </n-form-item>
+        <n-alert v-if="form.superuser" type="warning" style="margin-bottom: 8px">
+          {{ t('accounts.superuserRisk') }}
+        </n-alert>
         <n-form-item :label="t('accounts.createDb')">
           <n-switch v-model:value="form.create_db" />
         </n-form-item>
@@ -376,9 +479,9 @@ const columns: DataTableColumns<Account> = [
         </n-form-item>
         <n-form-item :label="t('accounts.permission')">
           <n-radio-group v-model:value="privForm.permission">
-            <n-radio value="owner">{{ t('databases.permissionOwner') }}</n-radio>
             <n-radio value="read_write">{{ t('databases.permissionReadWrite') }}</n-radio>
             <n-radio value="read_only">{{ t('databases.permissionReadOnly') }}</n-radio>
+            <n-radio value="owner">{{ t('databases.permissionOwner') }}</n-radio>
           </n-radio-group>
         </n-form-item>
       </n-form>
@@ -404,7 +507,7 @@ const columns: DataTableColumns<Account> = [
             key: 'actions',
             width: 90,
             render: (row: DatabasePrivilege) =>
-              row.level !== 'none'
+              row.level !== 'none' && row.level !== 'owner'
                 ? h(
                     NButton,
                     { size: 'tiny', type: 'error', tertiary: true, onClick: () => revokePriv(row.database) },
@@ -417,6 +520,39 @@ const columns: DataTableColumns<Account> = [
         size="small"
         :bordered="false"
       />
+    </n-modal>
+
+    <n-modal
+      v-model:show="showReset"
+      preset="card"
+      :title="t('accounts.resetPassword')"
+      style="width: 480px"
+    >
+      <n-form label-placement="left" label-width="100">
+        <n-form-item :label="t('accounts.name')">
+          {{ resetAccount?.name }}
+        </n-form-item>
+        <n-form-item :label="t('accounts.newPassword')">
+          <n-input v-model:value="resetPassword" />
+        </n-form-item>
+      </n-form>
+      <n-alert type="warning">{{ t('accounts.resetPasswordHint') }}</n-alert>
+      <n-space style="margin-top: 12px">
+        <n-button size="small" @click="resetPassword = randomPassword()">
+          {{ t('databases.generatePassword') }}
+        </n-button>
+        <n-button size="small" @click="copyResetPassword">
+          {{ t('databases.copyPassword') }}
+        </n-button>
+      </n-space>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showReset = false">{{ t('common.cancel') }}</n-button>
+          <n-button type="primary" :loading="resetSaving" :disabled="!resetPassword" @click="doReset">
+            {{ t('common.save') }}
+          </n-button>
+        </n-space>
+      </template>
     </n-modal>
   </div>
 </template>

@@ -28,7 +28,7 @@ func TestInstanceCRUD(t *testing.T) {
 	ctx := context.Background()
 	s := newStore(t)
 
-	inst := &Instance{Name: "prod", Host: "127.0.0.1", Port: 5432, Username: "postgres", SSLMode: "disable"}
+	inst := &Instance{Name: "prod", Host: "127.0.0.1", Port: 5432, Username: "postgres", SSLMode: "disable", ConnectionHost: "192.168.1.10"}
 	if err := s.Create(ctx, inst, "supersecret"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -56,13 +56,16 @@ func TestInstanceCRUD(t *testing.T) {
 	if list[0].Username != "postgres" {
 		t.Errorf("username = %q", list[0].Username)
 	}
+	if list[0].ConnectionHost != "192.168.1.10" {
+		t.Errorf("connection_host = %q", list[0].ConnectionHost)
+	}
 
 	// update without password keeps existing
-	if err := s.Update(ctx, &Instance{ID: inst.ID, Name: "prod2", Host: "127.0.0.1", Port: 5433, Username: "postgres", SSLMode: "require"}, nil); err != nil {
+	if err := s.Update(ctx, &Instance{ID: inst.ID, Name: "prod2", Host: "127.0.0.1", Port: 5433, Username: "postgres", SSLMode: "require", ConnectionHost: "db.example.com"}, nil); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	got, _ := s.Get(ctx, inst.ID)
-	if got.Name != "prod2" || got.Port != 5433 {
+	if got.Name != "prod2" || got.Port != 5433 || got.ConnectionHost != "db.example.com" {
 		t.Errorf("update not applied: %+v", got)
 	}
 	pw2, _ := s.Password(ctx, inst.ID)
