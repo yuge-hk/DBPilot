@@ -131,7 +131,7 @@ func validateStorageRequest(req *storageRequest) *APIError {
 	if req.Name == "" {
 		return ErrBadRequest("invalid_name", "name is required")
 	}
-	if req.Type != string(storage.TypeLocal) && req.Type != string(storage.TypeWebDAV) {
+	if req.Type != string(storage.TypeLocal) && req.Type != string(storage.TypeWebDAV) && req.Type != string(storage.TypeSFTP) {
 		return ErrBadRequest("invalid_request", "unknown storage type")
 	}
 	return nil
@@ -158,6 +158,30 @@ func parseStorageConfig(req *storageRequest) (any, error) {
 		}
 		if cfg.Timeout <= 0 {
 			cfg.Timeout = 30
+		}
+		return cfg, nil
+	case string(storage.TypeSFTP):
+		var cfg storage.SFTPConfig
+		if err := json.Unmarshal(req.Config, &cfg); err != nil {
+			return nil, err
+		}
+		if cfg.Host == "" {
+			return nil, errors.New("host is required")
+		}
+		if cfg.Username == "" {
+			return nil, errors.New("username is required")
+		}
+		if cfg.Port == 0 {
+			cfg.Port = 22
+		}
+		if cfg.Port < 1 || cfg.Port > 65535 {
+			return nil, errors.New("invalid port")
+		}
+		if cfg.Timeout <= 0 {
+			cfg.Timeout = 30
+		}
+		if cfg.HostKeyFingerprint == "" {
+			return nil, errors.New("host key fingerprint is required")
 		}
 		return cfg, nil
 	default:

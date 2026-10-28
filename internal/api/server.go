@@ -23,6 +23,7 @@ import (
 	"github.com/dbpilot/dbpilot/internal/runner"
 	"github.com/dbpilot/dbpilot/internal/storage"
 	"github.com/dbpilot/dbpilot/internal/task"
+	"github.com/dbpilot/dbpilot/internal/version"
 )
 
 const (
@@ -121,7 +122,7 @@ func (s *Server) Handler() http.Handler {
 	r.Use(s.requestLogger)
 
 	r.Get("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
-		writeOK(w, map[string]string{"status": "ok", "version": "0.1.0"})
+		writeOK(w, map[string]string{"status": "ok", "version": version.String()})
 	})
 
 	r.Route("/api/v1/auth", func(r chi.Router) {

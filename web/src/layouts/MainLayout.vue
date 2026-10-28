@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
@@ -29,12 +29,23 @@ import {
 } from '@vicons/ionicons5'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
+import { api } from '@/api/client'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const theme = useThemeStore()
+const version = ref('')
+
+onMounted(async () => {
+  try {
+    const health = await api.get<{ version: string }>('/api/v1/health')
+    version.value = health.version
+  } catch {
+    // version is informational only
+  }
+})
 
 const menuOptions: MenuOption[] = [
   { label: () => t('menu.overview'), key: 'overview', icon: renderIcon(GridOutline) },
@@ -83,14 +94,19 @@ function onMenuSelect(key: string) {
 <template>
   <n-layout has-sider style="height: 100vh">
     <n-layout-sider bordered collapse-mode="width" :width="220" :collapsed-width="64">
-      <div class="logo">
-        <span class="logo-text">{{ t('app.name') }}</span>
+      <div class="sider-inner">
+        <div class="logo">
+          <span class="logo-text">{{ t('app.name') }}</span>
+        </div>
+        <n-menu
+          :value="activeKey"
+          :options="menuOptions"
+          @update:value="onMenuSelect"
+        />
+        <div class="sider-footer">
+          <span v-if="version">v{{ version }}</span>
+        </div>
       </div>
-      <n-menu
-        :value="activeKey"
-        :options="menuOptions"
-        @update:value="onMenuSelect"
-      />
     </n-layout-sider>
     <n-layout>
       <n-layout-header bordered class="header">
@@ -117,6 +133,11 @@ function onMenuSelect(key: string) {
 </template>
 
 <style scoped>
+.sider-inner {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
 .logo {
   height: 56px;
   display: flex;
@@ -124,6 +145,13 @@ function onMenuSelect(key: string) {
   justify-content: center;
   font-weight: 700;
   font-size: 18px;
+}
+.sider-footer {
+  margin-top: auto;
+  padding: 12px 20px;
+  font-size: 12px;
+  opacity: 0.55;
+  text-align: center;
 }
 .header {
   height: 56px;

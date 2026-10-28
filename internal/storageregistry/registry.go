@@ -7,6 +7,7 @@ import (
 
 	"github.com/dbpilot/dbpilot/internal/storage"
 	"github.com/dbpilot/dbpilot/internal/storage/local"
+	"github.com/dbpilot/dbpilot/internal/storage/sftp"
 	"github.com/dbpilot/dbpilot/internal/storage/webdav"
 )
 
@@ -29,6 +30,12 @@ func Build(ctx context.Context, t *storage.Target, password string) (storage.Sto
 			return nil, fmt.Errorf("parse webdav config: %w", err)
 		}
 		return webdav.New(cfg, password)
+	case string(storage.TypeSFTP):
+		var cfg storage.SFTPConfig
+		if err := json.Unmarshal(t.Config, &cfg); err != nil {
+			return nil, fmt.Errorf("parse sftp config: %w", err)
+		}
+		return sftp.New(cfg, password)
 	default:
 		return nil, fmt.Errorf("unknown storage type: %s", t.Type)
 	}

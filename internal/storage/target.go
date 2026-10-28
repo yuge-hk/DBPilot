@@ -23,6 +23,15 @@ type WebDAVConfig struct {
 	Timeout   int    `json:"timeout"`
 }
 
+type SFTPConfig struct {
+	Host               string `json:"host"`
+	Port               int    `json:"port"`
+	Username           string `json:"username"`
+	BasePath           string `json:"base_path"`
+	HostKeyFingerprint string `json:"host_key_fingerprint"`
+	Timeout            int    `json:"timeout"`
+}
+
 type Target struct {
 	ID        int64           `json:"id"`
 	Name      string          `json:"name"`

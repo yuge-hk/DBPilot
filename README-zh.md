@@ -19,7 +19,7 @@ DBPilot **不是** pgAdmin，不是 SQL IDE，不是 1Panel，不是 Docker 管�
 - **Single Binary** — 单个静态 Go 二进制，前端通过 `go:embed` 内嵌
 - **No Docker Required** — 直接运行在 Linux，用 `systemd` 管理；运行时无需 Node.js 或 nginx
 - **中文优先界面** — 默认 `zh-CN`，完整的 i18n 架构，方便扩展更多语言
-- **随处备份** — 本地目录、NFS / SMB 挂载目录、WebDAV（AList、Nextcloud、NAS 等）
+- **随处备份** — 本地目录、NFS / SMB 挂载目录、WebDAV（AList、Nextcloud、NAS 等）、SFTP
 
 ## 功能
 
@@ -70,7 +70,7 @@ dbpilot run --config /etc/dbpilot/config.yaml
 添加 PostgreSQL 实例（测试连接）
 → 一键创建「数据库 + 独立账号 + Owner 权限」
 → 复制连接串
-→ 配置备份目标（/mnt/nas/postgres 或 WebDAV）
+→ 配置备份目标（/mnt/nas/postgres、WebDAV 或 SFTP）
 → 设置每天定时备份与保留策略
 ```
 

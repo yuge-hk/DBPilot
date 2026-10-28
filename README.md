@@ -22,7 +22,7 @@ Kubernetes platform.
 - **Single Binary** — one static Go binary with the frontend embedded via `go:embed`
 - **No Docker Required** — runs directly on Linux with `systemd`; no Node.js or nginx at runtime
 - **Chinese-first UI** — default `zh-CN`, with a complete i18n architecture ready for more locales
-- **Backup anywhere** — Local directory, NFS / SMB mounts, and WebDAV (AList, Nextcloud, NAS, ...)
+- **Backup anywhere** — Local directory, NFS / SMB mounts, WebDAV (AList, Nextcloud, NAS, ...) and SFTP
 
 ## Features
 
@@ -74,7 +74,7 @@ Open `http://127.0.0.1:8080`, complete the admin setup, then:
 Add a PostgreSQL instance (test the connection)
 → one-click create a database + dedicated account (Owner)
 → copy the connection string
-→ configure a backup target (/mnt/nas/postgres or WebDAV)
+→ configure a backup target (/mnt/nas/postgres, WebDAV or SFTP)
 → schedule daily backups with retention
 ```
 

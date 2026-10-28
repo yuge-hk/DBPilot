@@ -13,9 +13,8 @@ type ObjectInfo struct {
 	ModTime time.Time
 }
 
-// Storage is the abstraction over a backup destination. V0.1 implements
-// local/mounted directories and WebDAV; the interface leaves room for an
-// S3Storage without touching callers.
+// Storage is the abstraction over a backup destination. It currently
+// implements local/mounted directories, WebDAV and SFTP.
 type Storage interface {
 	Test(ctx context.Context) error
 	Put(ctx context.Context, path string, reader io.Reader) error
@@ -30,4 +29,5 @@ type Type string
 const (
 	TypeLocal  Type = "local"
 	TypeWebDAV Type = "webdav"
+	TypeSFTP   Type = "sftp"
 )

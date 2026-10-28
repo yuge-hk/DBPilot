@@ -48,13 +48,16 @@ const showModal = ref(false)
 const editingId = ref<number | null>(null)
 const form = reactive({
   name: '',
-  type: 'local' as 'local' | 'webdav',
+  type: 'local' as 'local' | 'webdav' | 'sftp',
   path: '',
   endpoint: '',
+  host: '',
+  port: 22,
   username: '',
   password: '',
   base_path: '',
   tls_verify: true,
+  host_key_fingerprint: '',
   timeout: 30,
 })
 const saving = ref(false)
@@ -63,8 +66,8 @@ const testing = ref(false)
 function openCreate() {
   editingId.value = null
   Object.assign(form, {
-    name: '', type: 'local', path: '', endpoint: '', username: '',
-    password: '', base_path: '', tls_verify: true, timeout: 30,
+    name: '', type: 'local', path: '', endpoint: '', host: '', port: 22, username: '',
+    password: '', base_path: '', tls_verify: true, host_key_fingerprint: '', timeout: 30,
   })
   showModal.value = true
 }
@@ -77,26 +80,40 @@ function openEdit(row: StorageTarget) {
     type: row.type,
     path: cfg.path || '',
     endpoint: cfg.endpoint || '',
+    host: cfg.host || '',
+    port: cfg.port || 22,
     username: cfg.username || '',
     password: '',
     base_path: cfg.base_path || '',
     tls_verify: cfg.tls_verify !== false,
+    host_key_fingerprint: cfg.host_key_fingerprint || '',
     timeout: cfg.timeout || 30,
   })
   showModal.value = true
 }
 
 function buildPayload() {
-  const config =
-    form.type === 'local'
-      ? { path: form.path }
-      : {
-          endpoint: form.endpoint,
-          username: form.username,
-          base_path: form.base_path,
-          tls_verify: form.tls_verify,
-          timeout: form.timeout,
-        }
+  let config: Record<string, unknown>
+  if (form.type === 'local') {
+    config = { path: form.path }
+  } else if (form.type === 'webdav') {
+    config = {
+      endpoint: form.endpoint,
+      username: form.username,
+      base_path: form.base_path,
+      tls_verify: form.tls_verify,
+      timeout: form.timeout,
+    }
+  } else {
+    config = {
+      host: form.host,
+      port: form.port,
+      username: form.username,
+      base_path: form.base_path,
+      host_key_fingerprint: form.host_key_fingerprint,
+      timeout: form.timeout,
+    }
+  }
   return {
     name: form.name,
     type: form.type,
@@ -153,7 +170,12 @@ const columns: DataTableColumns<StorageTarget> = [
       h(
         NTag,
         { size: 'small' },
-        () => (row.type === 'local' ? t('storages.typeLocal') : t('storages.typeWebdav')),
+        () =>
+          row.type === 'local'
+            ? t('storages.typeLocal')
+            : row.type === 'webdav'
+              ? t('storages.typeWebdav')
+              : t('storages.typeSftp'),
       ),
   },
   {
@@ -197,6 +219,7 @@ const columns: DataTableColumns<StorageTarget> = [
           <n-radio-group v-model:value="form.type">
             <n-radio value="local">{{ t('storages.typeLocal') }}</n-radio>
             <n-radio value="webdav">{{ t('storages.typeWebdav') }}</n-radio>
+            <n-radio value="sftp">{{ t('storages.typeSftp') }}</n-radio>
           </n-radio-group>
         </n-form-item>
 
@@ -206,7 +229,7 @@ const columns: DataTableColumns<StorageTarget> = [
           </n-form-item>
         </template>
 
-        <template v-else>
+        <template v-else-if="form.type === 'webdav'">
           <n-form-item :label="t('storages.endpoint')" required>
             <n-input v-model:value="form.endpoint" placeholder="https://example.com/dav/" />
           </n-form-item>
@@ -221,6 +244,34 @@ const columns: DataTableColumns<StorageTarget> = [
           </n-form-item>
           <n-form-item :label="t('storages.tlsVerify')">
             <n-switch v-model:value="form.tls_verify" />
+          </n-form-item>
+          <n-form-item :label="t('storages.timeout')">
+            <n-input-number v-model:value="form.timeout" :min="1" :max="600" />
+          </n-form-item>
+        </template>
+
+        <template v-else>
+          <n-form-item :label="t('instances.host')" required>
+            <n-input v-model:value="form.host" placeholder="192.168.0.179" />
+          </n-form-item>
+          <n-form-item :label="t('instances.port')">
+            <n-input-number v-model:value="form.port" :min="1" :max="65535" />
+          </n-form-item>
+          <n-form-item :label="t('storages.username')" required>
+            <n-input v-model:value="form.username" />
+          </n-form-item>
+          <n-form-item :label="t('storages.password')">
+            <n-input v-model:value="form.password" type="password" show-password-on="click" />
+          </n-form-item>
+          <n-form-item :label="t('storages.basePath')">
+            <n-input v-model:value="form.base_path" placeholder="/backups/dbpilot" />
+          </n-form-item>
+          <n-form-item :label="t('storages.hostKeyFingerprint')" required>
+            <n-input
+              v-model:value="form.host_key_fingerprint"
+              :placeholder="t('storages.hostKeyFingerprintPlaceholder')"
+            />
+            <div class="hint">{{ t('storages.hostKeyFingerprintHint') }}</div>
           </n-form-item>
           <n-form-item :label="t('storages.timeout')">
             <n-input-number v-model:value="form.timeout" :min="1" :max="600" />
@@ -243,5 +294,11 @@ const columns: DataTableColumns<StorageTarget> = [
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
+}
+.hint {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.7;
 }
 </style>

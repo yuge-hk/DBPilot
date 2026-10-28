@@ -3,7 +3,7 @@ import { api } from './client'
 export interface StorageTarget {
   id: number
   name: string
-  type: 'local' | 'webdav'
+  type: 'local' | 'webdav' | 'sftp'
   config: any
   created_at: string
   updated_at: string
@@ -11,7 +11,7 @@ export interface StorageTarget {
 
 export interface StoragePayload {
   name: string
-  type: 'local' | 'webdav'
+  type: 'local' | 'webdav' | 'sftp'
   config: Record<string, any>
   password?: string
 }
